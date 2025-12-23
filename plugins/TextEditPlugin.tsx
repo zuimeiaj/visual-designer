@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { CanvasPlugin, PluginContext } from '../types';
+import { TextShape } from '../models/UIShape';
 
 export const useTextEditPlugin = (): CanvasPlugin => {
   return {
@@ -61,7 +62,11 @@ export const useTextEditPlugin = (): CanvasPlugin => {
               finishEditing();
             }
           }}
-          onChange={(e) => ctx.updateShape(editingId, { text: e.target.value })}
+          onChange={(e) => {
+            const newText = e.target.value;
+            const newHeight = TextShape.measureHeight(newText, shape.width, shape.fontSize || 16);
+            ctx.updateShape(editingId, { text: newText, height: newHeight });
+          }}
         />
       );
     }

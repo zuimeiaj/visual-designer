@@ -2,6 +2,7 @@
 import { useState, useCallback } from 'react';
 import { CanvasState, Shape } from '../types';
 import { Scene } from '../models/Scene';
+import { TextShape } from '../models/UIShape';
 
 type DragMode = 'move' | 'resize' | 'rotate' | 'pan' | null;
 type ResizeHandle = 'tl' | 'tr' | 'bl' | 'br';
@@ -90,7 +91,6 @@ export const useCanvasInteractions = ({
       if (shape) {
         const handleThreshold = 15 / state.zoom;
 
-        // Check Resize Handles
         const handles: ResizeHandle[] = ['tl', 'tr', 'bl', 'br'];
         for (const h of handles) {
           const coords = getGlobalCorner(shape, h);
@@ -121,7 +121,6 @@ export const useCanvasInteractions = ({
           }
         }
 
-        // Check Rotation Handle
         const rotateCoords = getRotationHandleCoords(shape);
         if (Math.hypot(x - rotateCoords.x, y - rotateCoords.y) < handleThreshold) {
           setDragMode('rotate');
@@ -193,11 +192,15 @@ export const useCanvasInteractions = ({
       newWidth = Math.max(10, newWidth);
       newHeight = Math.max(10, newHeight);
 
-      // Force proportional resize for circles
       if (shape.type === 'circle') {
         const size = Math.max(newWidth, newHeight);
         newWidth = size;
         newHeight = size;
+      }
+      
+      // Auto-height for text shapes on width resize
+      if (shape.type === 'text') {
+        newHeight = TextShape.measureHeight(shape.text || '', newWidth, shape.fontSize || 16);
       }
 
       let vcx = 0, vcy = 0;

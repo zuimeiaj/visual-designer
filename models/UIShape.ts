@@ -33,9 +33,6 @@ export abstract class UIShape {
     this.layer = index;
   }
 
-  /**
-   * Applies transformations and calls the concrete draw implementation.
-   */
   public draw(ctx: CanvasRenderingContext2D, zoom: number): void {
     ctx.save();
     const cx = this.x + this.width / 2;
@@ -51,18 +48,11 @@ export abstract class UIShape {
 
   public abstract onDraw(ctx: CanvasRenderingContext2D, zoom: number): void;
 
-  /**
-   * Hit test accounting for rotation by transforming point to local space.
-   */
   public hitTest(px: number, py: number): boolean {
     const cx = this.x + this.width / 2;
     const cy = this.y + this.height / 2;
-    
-    // Translate point to origin relative to center
     const dx = px - cx;
     const dy = py - cy;
-    
-    // Rotate point inversely
     const cos = Math.cos(-this.rotation);
     const sin = Math.sin(-this.rotation);
     const lx = dx * cos - dy * sin + cx;
@@ -114,34 +104,78 @@ export class TextShape extends UIShape {
     this.fontSize = data.fontSize || 16;
   }
 
+  /**
+   * Internal helper to calculate wrapped lines based on width and font.
+   */
+  private static getWrappedLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, fontSize: number): string[] {
+    ctx.font = `${fontSize}px Inter`;
+    const lines: string[] = [];
+    const paragraphs = text.split('\n');
+
+    paragraphs.forEach(paragraph => {
+      if (paragraph === '') {
+        lines.push('');
+        return;
+      }
+      const words = paragraph.split(' ');
+      let currentLine = '';
+
+      for (let i = 0; i < words.length; i++) {
+        const word = words[i];
+        const testLine = currentLine ? currentLine + ' ' + word : word;
+        const metrics = ctx.measureText(testLine);
+
+        if (metrics.width <= maxWidth) {
+          currentLine = testLine;
+        } else {
+          // If the word itself is too long for a single line, we break it character by character
+          if (ctx.measureText(word).width > maxWidth) {
+            if (currentLine) lines.push(currentLine);
+            currentLine = '';
+
+            let charLine = '';
+            for (let j = 0; j < word.length; j++) {
+              const testCharLine = charLine + word[j];
+              if (ctx.measureText(testCharLine).width > maxWidth) {
+                if (charLine) lines.push(charLine);
+                charLine = word[j];
+              } else {
+                charLine = testCharLine;
+              }
+            }
+            currentLine = charLine;
+          } else {
+            // Standard word wrap
+            if (currentLine) lines.push(currentLine);
+            currentLine = word;
+          }
+        }
+      }
+      lines.push(currentLine);
+    });
+    return lines;
+  }
+
+  public static measureHeight(text: string, width: number, fontSize: number): number {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return fontSize * 1.2;
+    
+    const lines = this.getWrappedLines(ctx, text, width, fontSize);
+    return lines.length * fontSize * 1.2;
+  }
+
   public onDraw(ctx: CanvasRenderingContext2D): void {
     ctx.fillStyle = this.fill;
     ctx.font = `${this.fontSize}px Inter`;
     ctx.textBaseline = 'top';
     
-    // Simple Multiline Wrapping
-    const words = this.text.split(' ');
-    let line = '';
-    let y = this.y;
+    const lines = TextShape.getWrappedLines(ctx, this.text, this.width, this.fontSize);
     const lineHeight = this.fontSize * 1.2;
-    const maxWidth = this.width;
-
-    for (let n = 0; n < words.length; n++) {
-      const testLine = line + words[n] + ' ';
-      const metrics = ctx.measureText(testLine);
-      const testWidth = metrics.width;
-      
-      if (testWidth > maxWidth && n > 0) {
-        ctx.fillText(line, this.x, y);
-        line = words[n] + ' ';
-        y += lineHeight;
-        // Don't draw beyond height if we want strict clipping, 
-        // but design tools usually allow overflow vertically or expand height.
-      } else {
-        line = testLine;
-      }
-    }
-    ctx.fillText(line, this.x, y);
+    
+    lines.forEach((line, index) => {
+      ctx.fillText(line, this.x, this.y + index * lineHeight);
+    });
   }
 
   public update(data: Partial<Shape>): void {
