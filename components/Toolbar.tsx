@@ -1,7 +1,8 @@
 
 import React from 'react';
 import { Shape } from '../types';
-import { Palette, Move, Type, Maximize2, RotateCcw } from 'lucide-react';
+import { Palette } from 'lucide-react';
+import { useTranslation } from '../lang/i18n';
 
 interface Props {
   selectedShape?: Shape;
@@ -9,13 +10,14 @@ interface Props {
 }
 
 const Toolbar: React.FC<Props> = ({ selectedShape, onUpdate }) => {
+  const { t } = useTranslation();
   if (!selectedShape) return null;
 
   return (
     <div className="absolute bottom-8 left-1/2 -translate-x-1/2 glass-panel p-2 rounded-2xl flex items-center gap-4 z-40 shadow-2xl">
       <div className="flex items-center gap-2 border-r border-zinc-800 pr-4 mr-2">
         <span className="text-[10px] font-bold uppercase text-zinc-500 px-2 tracking-tighter">
-          {selectedShape.type}
+          {t(`tools.${selectedShape.type}`)}
         </span>
       </div>
 
@@ -44,7 +46,7 @@ const Toolbar: React.FC<Props> = ({ selectedShape, onUpdate }) => {
 
       <div className="flex items-center gap-2 border-l border-zinc-800 pl-4">
         <div className="flex flex-col gap-0.5">
-          <label className="text-[8px] text-zinc-600 font-bold uppercase">Width</label>
+          <label className="text-[8px] text-zinc-600 font-bold uppercase">{t('properties.width')}</label>
           <input 
             type="number" 
             value={Math.round(selectedShape.width)} 
@@ -53,7 +55,7 @@ const Toolbar: React.FC<Props> = ({ selectedShape, onUpdate }) => {
           />
         </div>
         <div className="flex flex-col gap-0.5">
-          <label className="text-[8px] text-zinc-600 font-bold uppercase">Height</label>
+          <label className="text-[8px] text-zinc-600 font-bold uppercase">{t('properties.height')}</label>
           <input 
             type="number" 
             value={Math.round(selectedShape.height)} 
@@ -62,7 +64,7 @@ const Toolbar: React.FC<Props> = ({ selectedShape, onUpdate }) => {
           />
         </div>
         <div className="flex flex-col gap-0.5">
-          <label className="text-[8px] text-zinc-600 font-bold uppercase">Rotate</label>
+          <label className="text-[8px] text-zinc-600 font-bold uppercase">{t('properties.rotate')}</label>
           <input 
             type="number" 
             value={Math.round((selectedShape.rotation * 180) / Math.PI)} 
@@ -75,7 +77,7 @@ const Toolbar: React.FC<Props> = ({ selectedShape, onUpdate }) => {
       {selectedShape.type === 'text' && (
         <div className="flex items-center gap-2 border-l border-zinc-800 pl-4">
           <div className="flex flex-col gap-0.5">
-             <label className="text-[8px] text-zinc-600 font-bold uppercase">Size</label>
+             <label className="text-[8px] text-zinc-600 font-bold uppercase">{t('properties.size')}</label>
              <input 
                 type="number" 
                 value={selectedShape.fontSize} 
@@ -84,13 +86,13 @@ const Toolbar: React.FC<Props> = ({ selectedShape, onUpdate }) => {
              />
           </div>
           <div className="flex flex-col gap-0.5">
-             <label className="text-[8px] text-zinc-600 font-bold uppercase">Content</label>
+             <label className="text-[8px] text-zinc-600 font-bold uppercase">{t('properties.content')}</label>
              <input 
                 type="text" 
                 value={selectedShape.text} 
                 onChange={(e) => onUpdate({ text: e.target.value })}
                 className="w-32 bg-transparent text-xs border-none outline-none focus:text-indigo-400 placeholder:text-zinc-700"
-                placeholder="Text content..."
+                placeholder={t('properties.contentPlaceholder')}
              />
           </div>
         </div>

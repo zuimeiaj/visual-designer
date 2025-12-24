@@ -1,8 +1,11 @@
 
-import { Shape } from "../types";
+// Added ShapeType to imports
+import { Shape, ShapeType } from "../types";
 
 export abstract class UIShape {
   public id: string;
+  // Added type property to UIShape
+  public type: ShapeType;
   public x: number;
   public y: number;
   public width: number;
@@ -16,6 +19,8 @@ export abstract class UIShape {
 
   constructor(data: Shape) {
     this.id = data.id;
+    // Initialize type property
+    this.type = data.type;
     this.x = data.x;
     this.y = data.y;
     this.width = data.width;

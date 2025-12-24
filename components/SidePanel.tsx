@@ -1,7 +1,8 @@
 
 import React, { useState } from 'react';
-import { Sparkles, MessageSquare, Wand2, RefreshCw, Layers, Zap, Palette } from 'lucide-react';
+import { Sparkles, Wand2, RefreshCw, Layers, Zap, Palette } from 'lucide-react';
 import { Shape } from '../types';
+import { useTranslation } from '../lang/i18n';
 
 interface Props {
   onAction: (prompt: string) => void;
@@ -11,6 +12,7 @@ interface Props {
 
 const SidePanel: React.FC<Props> = ({ onAction, isProcessing, shapes }) => {
   const [prompt, setPrompt] = useState('');
+  const { t, language } = useTranslation();
 
   const handleQuickAction = (action: string) => {
     onAction(action);
@@ -20,18 +22,18 @@ const SidePanel: React.FC<Props> = ({ onAction, isProcessing, shapes }) => {
     <div className="flex flex-col h-full p-4 overflow-y-auto">
       <div className="flex items-center gap-2 mb-6">
         <Sparkles className="w-5 h-5 text-indigo-400" />
-        <h2 className="text-sm font-semibold uppercase tracking-wider">AI Assistant</h2>
+        <h2 className="text-sm font-semibold uppercase tracking-wider">{t('ai.assistant')}</h2>
       </div>
 
       <div className="flex-1 flex flex-col gap-6">
         {/* Chat Input */}
         <div className="flex flex-col gap-2">
-          <label className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">Describe your design</label>
+          <label className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">{t('ai.describeDesign')}</label>
           <div className="relative">
             <textarea 
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="e.g., 'Add a sleek sidebar mockup' or 'Change colors to a cyberpunk theme'"
+              placeholder={t('ai.placeholder')}
               className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-3 text-sm min-h-[100px] focus:ring-2 focus:ring-indigo-500 outline-none transition-all placeholder:text-zinc-600 resize-none"
             />
             <button 
@@ -51,25 +53,25 @@ const SidePanel: React.FC<Props> = ({ onAction, isProcessing, shapes }) => {
 
         {/* Quick Actions */}
         <div className="flex flex-col gap-3">
-          <label className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">Quick Suggestions</label>
+          <label className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">{t('ai.suggestions')}</label>
           <div className="grid grid-cols-1 gap-2">
             <QuickActionButton 
               icon={<Wand2 className="w-4 h-4" />}
-              label="Enhance Layout"
-              description="Optimize spacing and alignment"
-              onClick={() => handleQuickAction("Analyze my current shapes and suggest a better layout to make it look professional.")}
+              label={t('ai.enhanceLayout')}
+              description={t('ai.enhanceDesc')}
+              onClick={() => handleQuickAction(language === 'zh' ? "分析我当前的形状并提出更好的布局建议，使其看起来更专业。" : "Analyze my current shapes and suggest a better layout to make it look professional.")}
             />
             <QuickActionButton 
               icon={<Palette className="w-4 h-4" />}
-              label="Modern Palette"
-              description="Apply high-contrast pro colors"
-              onClick={() => handleQuickAction("Suggest a modern, high-contrast color palette for all current shapes.")}
+              label={t('ai.modernPalette')}
+              description={t('ai.paletteDesc')}
+              onClick={() => handleQuickAction(language === 'zh' ? "为当前所有形状建议一个现代且高对比度的配色方案。" : "Suggest a modern, high-contrast color palette for all current shapes.")}
             />
             <QuickActionButton 
               icon={<Layers className="w-4 h-4" />}
-              label="Generate Icon"
-              description="Create a custom SVG-style asset"
-              onClick={() => handleQuickAction("Generate a minimalist abstract icon asset.")}
+              label={t('ai.generateIcon')}
+              description={t('ai.iconDesc')}
+              onClick={() => handleQuickAction(language === 'zh' ? "生成一个极简主义的抽象图标资源。" : "Generate a minimalist abstract icon asset.")}
             />
           </div>
         </div>
@@ -77,7 +79,7 @@ const SidePanel: React.FC<Props> = ({ onAction, isProcessing, shapes }) => {
         {/* Status */}
         <div className="mt-auto p-4 rounded-xl bg-zinc-800/30 border border-zinc-800">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] text-zinc-400">Canvas elements</span>
+            <span className="text-[10px] text-zinc-400">{t('ai.canvasElements', { count: shapes.length })}</span>
             <span className="text-[10px] font-mono text-zinc-300">{shapes.length}</span>
           </div>
           <div className="w-full bg-zinc-800 h-1 rounded-full overflow-hidden">

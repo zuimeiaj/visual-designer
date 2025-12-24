@@ -1,0 +1,41 @@
+
+export const en = {
+  app: {
+    title: "CanvasAI Designer",
+    export: "Export",
+    processing: "Processing...",
+    welcome: "Welcome to CanvasAI",
+    doubleClickEdit: "Double click to edit",
+  },
+  tools: {
+    select: "Select",
+    rect: "Rectangle",
+    circle: "Circle",
+    text: "Text",
+    image: "Image",
+    delete: "Delete",
+  },
+  ai: {
+    assistant: "AI Assistant",
+    describeDesign: "Describe your design",
+    placeholder: "e.g., 'Add a sleek sidebar mockup' or 'Change colors to a cyberpunk theme'",
+    suggestions: "Quick Suggestions",
+    enhanceLayout: "Enhance Layout",
+    enhanceDesc: "Optimize spacing and alignment",
+    modernPalette: "Modern Palette",
+    paletteDesc: "Apply high-contrast pro colors",
+    generateIcon: "Generate Icon",
+    iconDesc: "Create a custom asset",
+    canvasElements: "Canvas elements: {{count}}",
+  },
+  properties: {
+    width: "Width",
+    height: "Height",
+    rotate: "Rotate",
+    size: "Size",
+    content: "Content",
+    contentPlaceholder: "Text content...",
+  }
+};
+
+export type TranslationKeys = typeof en;

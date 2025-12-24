@@ -6,16 +6,17 @@ export class GeminiService {
   private ai: GoogleGenAI;
 
   constructor() {
-    // Initializing with direct process.env.API_KEY as per guidelines
     this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   }
 
-  async getDesignSuggestions(currentShapes: Shape[], prompt: string) {
+  async getDesignSuggestions(currentShapes: Shape[], prompt: string, lang: 'en' | 'zh' = 'en') {
+    const langInstruction = lang === 'zh' ? "请用中文回答。" : "Please answer in English.";
+    
     const response: GenerateContentResponse = await this.ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: `Current Canvas State: ${JSON.stringify(currentShapes)}. User request: ${prompt}`,
       config: {
-        systemInstruction: "You are a professional UI/UX and Graphic Design assistant. Based on the current shapes on a canvas, provide a structured suggestion. Suggest color improvements, layout changes, or new shapes to add. Return JSON only.",
+        systemInstruction: `You are a professional UI/UX and Graphic Design assistant. Based on the current shapes on a canvas, provide a structured suggestion. Suggest color improvements, layout changes, or new shapes to add. Return JSON only. ${langInstruction}`,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -43,7 +44,6 @@ export class GeminiService {
     });
 
     try {
-      // Accessing response.text as a property, not a method
       const text = response.text;
       return text ? JSON.parse(text) : null;
     } catch (e) {
@@ -65,7 +65,6 @@ export class GeminiService {
       }
     });
 
-    // Iterating through all parts to find the image part
     for (const part of response.candidates?.[0]?.content?.parts || []) {
       if (part.inlineData) {
         return `data:image/png;base64,${part.inlineData.data}`;

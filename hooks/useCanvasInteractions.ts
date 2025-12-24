@@ -86,8 +86,10 @@ export const useCanvasInteractions = ({
   const onMouseDown = (e: React.MouseEvent) => {
     const { x, y } = getCanvasCoords(e.clientX, e.clientY);
 
-    if (state.selectedId) {
-      const shape = state.shapes.find(s => s.id === state.selectedId);
+    // Fix: Use selectedIds array instead of non-existent selectedId property
+    const primarySelectedId = state.selectedIds[0];
+    if (primarySelectedId) {
+      const shape = state.shapes.find(s => s.id === primarySelectedId);
       if (shape) {
         const handleThreshold = 15 / state.zoom;
 
@@ -137,8 +139,9 @@ export const useCanvasInteractions = ({
     }
 
     const hit = scene.hitTest(x, y);
-    const selectedId = hit ? hit.id : null;
-    setState(prev => ({ ...prev, selectedId }));
+    const clickedId = hit ? hit.id : null;
+    // Fix: Update selectedIds state instead of non-existent selectedId property
+    setState(prev => ({ ...prev, selectedIds: clickedId ? [clickedId] : [] }));
     
     if (hit) {
       setDragMode('move');

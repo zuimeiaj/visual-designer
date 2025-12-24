@@ -61,7 +61,9 @@ export class Scene {
 
       shape.draw(ctx, state.zoom);
       
-      if (state.selectedId === shape.id) {
+      // Only draw individual selection frame if ONLY one shape is selected
+      // This prevents visual double-bordering when GroupTransformPlugin is active
+      if (state.selectedIds.length === 1 && state.selectedIds.includes(shape.id)) {
         ctx.save();
         const cx = shape.x + shape.width / 2;
         const cy = shape.y + shape.height / 2;
@@ -71,7 +73,7 @@ export class Scene {
 
         ctx.strokeStyle = '#6366f1';
         ctx.lineWidth = 2 / state.zoom;
-        const p = 4 / state.zoom;
+        const p = 4 / state.zoom; // Padding for selection box
         ctx.strokeRect(shape.x - p, shape.y - p, shape.width + p * 2, shape.height + p * 2);
         
         ctx.restore();
