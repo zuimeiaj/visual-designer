@@ -14,6 +14,7 @@ import { useSelectionPlugin } from './plugins/SelectionPlugin';
 import { useTransformPlugin } from './plugins/TransformPlugin';
 import { useGroupTransformPlugin } from './plugins/GroupTransformPlugin';
 import { useRulerPlugin } from './plugins/RulerPlugin';
+import { useSmartGuidesPlugin } from './plugins/SmartGuidesPlugin';
 import { I18nProvider, useTranslation, Language } from './lang/i18n';
 import { useHistory } from './hooks/useHistory';
 
@@ -43,6 +44,7 @@ const MainApp: React.FC = () => {
   const transformPlugin = useTransformPlugin();
   const groupTransformPlugin = useGroupTransformPlugin();
   const rulerPlugin = useRulerPlugin();
+  const smartGuidesPlugin = useSmartGuidesPlugin();
   
   const basePlugin: any = useMemo(() => ({
     name: 'core',
@@ -102,11 +104,12 @@ const MainApp: React.FC = () => {
   const plugins = useMemo(() => [
     basePlugin, 
     rulerPlugin,
+    smartGuidesPlugin, // Render smart guides below interactive controls but above background
     textPlugin, 
     groupTransformPlugin,
     transformPlugin, 
     selectionPlugin
-  ], [basePlugin, textPlugin, groupTransformPlugin, transformPlugin, selectionPlugin, rulerPlugin]);
+  ], [basePlugin, textPlugin, groupTransformPlugin, transformPlugin, selectionPlugin, rulerPlugin, smartGuidesPlugin]);
 
   const addShape = useCallback((type: ShapeType) => {
     const newShape: Shape = {
