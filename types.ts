@@ -4,7 +4,7 @@ import { UIShape } from "./models/UIShape";
 import { Scene } from "./models/Scene";
 import { CanvasRenderer } from "./services/canvasRenderer";
 
-export type ShapeType = 'rect' | 'circle' | 'text' | 'image';
+export type ShapeType = 'rect' | 'circle' | 'text' | 'image' | 'group';
 
 export interface Shape {
   id: string;
@@ -20,6 +20,7 @@ export interface Shape {
   text?: string;
   fontSize?: number;
   src?: string;
+  children?: Shape[]; // Added for grouping
 }
 
 export interface CanvasState {
@@ -50,6 +51,7 @@ export interface CanvasPlugin {
   onMouseMove?: (e: React.MouseEvent, ctx: PluginContext) => void;
   onMouseUp?: (e: React.MouseEvent, ctx: PluginContext) => void;
   onDoubleClick?: (e: React.MouseEvent, hit: UIShape | null, ctx: PluginContext) => boolean | void;
+  onContextMenu?: (e: React.MouseEvent, hit: UIShape | null, ctx: PluginContext) => boolean | void;
   onKeyDown?: (e: KeyboardEvent, ctx: PluginContext) => boolean | void;
   onWheel?: (e: React.WheelEvent, ctx: PluginContext) => boolean | void;
   

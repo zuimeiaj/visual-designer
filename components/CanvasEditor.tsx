@@ -18,14 +18,31 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
   const rendererRef = useRef<CanvasRenderer | null>(null);
   const scene = useMemo(() => new Scene(state.shapes), []);
   
+  // Robust Synchronization: Handles property updates, additions, removals, and REORDERING.
   useEffect(() => {
+    // 1. Sync properties and add missing shapes
     state.shapes.forEach(s => {
       const existing = scene.getShapes().find(os => os.id === s.id);
-      if (existing) existing.update(s);
-      else scene.add(s);
+      if (existing) {
+        existing.update(s);
+      } else {
+        scene.add(s);
+      }
     });
+
+    // 2. Remove shapes that are no longer in state
+    const shapeIdsInState = new Set(state.shapes.map(s => s.id));
     scene.getShapes().forEach(s => {
-      if (!state.shapes.find(os => os.id === s.id)) scene.remove(s.id);
+      if (!shapeIdsInState.has(s.id)) scene.remove(s.id);
+    });
+
+    // 3. FIX: Reorder internal scene list to match state.shapes order
+    // The rendering order in Scene.ts depends on the array index.
+    const internalShapes = scene.getShapes();
+    internalShapes.sort((a, b) => {
+      const indexA = state.shapes.findIndex(s => s.id === a.id);
+      const indexB = state.shapes.findIndex(s => s.id === b.id);
+      return indexA - indexB;
     });
   }, [state.shapes, scene]);
 
@@ -83,6 +100,15 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
     }
   };
 
+  const onContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const { x, y } = getCanvasCoords(e.clientX, e.clientY);
+    const hit = scene.hitTest(x, y);
+    for (const p of plugins) {
+      if (p.onContextMenu?.(e, hit, pluginCtx)) break;
+    }
+  };
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       for (const p of plugins) {
@@ -93,14 +119,10 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [plugins, pluginCtx]);
 
-  // Native wheel listener to force preventDefault for browser zoom
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     const handleWheel = (e: WheelEvent) => {
-      // Create a bridge for React.WheelEvent expectations if needed, 
-      // but native WheelEvent has all necessary properties (deltaY, ctrlKey, etc.)
       for (const p of plugins) {
         if (p.onWheel?.(e as any, pluginCtx)) {
           e.preventDefault();
@@ -108,7 +130,6 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
         }
       }
     };
-
     canvas.addEventListener('wheel', handleWheel, { passive: false });
     return () => canvas.removeEventListener('wheel', handleWheel);
   }, [plugins, pluginCtx]);
@@ -145,6 +166,7 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
         onDoubleClick={onDoubleClick}
+        onContextMenu={onContextMenu}
         className="w-full h-full outline-none"
       />
       {plugins.map((p, i) => <React.Fragment key={p.name + i}>{p.onRenderOverlay?.(pluginCtx)}</React.Fragment>)}

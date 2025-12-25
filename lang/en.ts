@@ -35,6 +35,16 @@ export const en = {
     size: "Size",
     content: "Content",
     contentPlaceholder: "Text content...",
+  },
+  menu: {
+    layer: "Layer",
+    bringForward: "Bring Forward",
+    bringToFront: "Bring to Front",
+    sendBackward: "Send Backward",
+    sendToBack: "Send to Back",
+    group: "Group",
+    ungroup: "Ungroup",
+    delete: "Delete",
   }
 };
 

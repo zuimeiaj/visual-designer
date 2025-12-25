@@ -37,5 +37,15 @@ export const zh: TranslationKeys = {
     size: "字号",
     content: "内容",
     contentPlaceholder: "请输入文本...",
+  },
+  menu: {
+    layer: "层级",
+    bringForward: "上移一层",
+    bringToFront: "置于顶层",
+    sendBackward: "下移一层",
+    sendToBack: "置于底层",
+    group: "组合",
+    ungroup: "取消组合",
+    delete: "删除",
   }
 };

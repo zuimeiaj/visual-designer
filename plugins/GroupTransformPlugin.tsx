@@ -1,335 +1,284 @@
 
 import { useState } from 'react';
-import { CanvasPlugin, Shape, PluginContext } from '../types';
+import { CanvasPlugin, Shape } from '../types';
 
 type DragMode = 'move' | 'resize' | 'rotate' | null;
 type ResizeHandle = 'tl' | 'tr' | 'bl' | 'br' | 'tm' | 'bm' | 'ml' | 'mr';
 
+interface ShapeSnapshot {
+  id: string;
+  type: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+}
+
 export const useGroupTransformPlugin = (): CanvasPlugin => {
   const [dragMode, setDragMode] = useState<DragMode>(null);
   const [activeHandle, setActiveHandle] = useState<ResizeHandle | null>(null);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [currentMouse, setCurrentMouse] = useState({ x: 0, y: 0 });
-  const [initialShapes, setInitialShapes] = useState<Shape[]>([]);
-  const [initialGroupRect, setInitialGroupRect] = useState<{ x: number, y: number, w: number, h: number } | null>(null);
+  const [startMouse, setStartMouse] = useState({ x: 0, y: 0 });
   const [fixedPoint, setFixedPoint] = useState({ x: 0, y: 0 });
-  const [rotationDelta, setRotationDelta] = useState(0);
+  const [pivotPoint, setPivotPoint] = useState({ x: 0, y: 0 });
+  const [visualRotation, setVisualRotation] = useState(0);
+  const [visualScale, setVisualScale] = useState({ sx: 1, sy: 1 });
+  
+  const [snapshots, setSnapshots] = useState<ShapeSnapshot[]>([]);
+  const [initialRect, setInitialRect] = useState<{ x: number, y: number, w: number, h: number } | null>(null);
 
   const VISUAL_PADDING = 4;
 
-  const getGroupBounds = (shapes: Shape[], ids: string[], zoom: number) => {
+  const getAABB = (s: Shape): { x: number, y: number, w: number, h: number } => {
+    if (s.children && s.children.length > 0) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      s.children.forEach(c => {
+        const b = getAABB(c);
+        minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
+        maxX = Math.max(maxX, b.x + b.w); maxY = Math.max(maxY, b.y + b.h);
+      });
+      return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+    }
+    const cx = s.x + s.width / 2, cy = s.y + s.height / 2;
+    const cos = Math.cos(s.rotation), sin = Math.sin(s.rotation);
+    const hw = s.width / 2, hh = s.height / 2;
+    const corners = [{x:-hw,y:-hh},{x:hw,y:-hh},{x:hw,y:hh},{x:-hw,y:hh}].map(p => ({
+      x: cx + p.x * cos - p.y * sin, y: cy + p.x * sin + p.y * cos
+    }));
+    const xs = corners.map(p => p.x), ys = corners.map(p => p.y);
+    const minX = Math.min(...xs), minY = Math.min(...ys);
+    return { x: minX, y: minY, w: Math.max(...xs) - minX, h: Math.max(...ys) - minY };
+  };
+
+  const getMultiAABB = (shapes: Shape[], ids: string[]) => {
     const selected = shapes.filter(s => ids.includes(s.id));
     if (selected.length === 0) return null;
-
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    const padding = VISUAL_PADDING / zoom;
-
     selected.forEach(s => {
-      const corners = [
-        { x: -padding, y: -padding }, 
-        { x: s.width + padding, y: -padding },
-        { x: -padding, y: s.height + padding }, 
-        { x: s.width + padding, y: s.height + padding }
-      ];
-      const cx = s.x + s.width / 2;
-      const cy = s.y + s.height / 2;
-      const cos = Math.cos(s.rotation);
-      const sin = Math.sin(s.rotation);
-
-      corners.forEach(p => {
-        const dx = p.x - s.width / 2;
-        const dy = p.y - s.height / 2;
-        const wx = dx * cos - dy * sin + cx;
-        const wy = dx * sin + dy * cos + cy;
-        minX = Math.min(minX, wx);
-        minY = Math.min(minY, wy);
-        maxX = Math.max(maxX, wx);
-        maxY = Math.max(maxY, wy);
-      });
+      const b = getAABB(s);
+      minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
+      maxX = Math.max(maxX, b.x + b.w); maxY = Math.max(maxY, b.y + b.h);
     });
-
     return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
   };
 
-  const getCursorForHandle = (handle: ResizeHandle): string => {
-    switch (handle) {
-      case 'tl': case 'br': return 'nwse-resize';
-      case 'tr': case 'bl': return 'nesw-resize';
-      case 'tm': case 'bm': return 'ns-resize';
-      case 'ml': case 'mr': return 'ew-resize';
-      default: return 'pointer';
-    }
+  const rotatePoint = (px: number, py: number, cx: number, cy: number, angle: number) => {
+    const cos = Math.cos(angle), sin = Math.sin(angle);
+    const dx = px - cx, dy = py - cy;
+    return {
+      x: dx * cos - dy * sin + cx,
+      y: dx * sin + dy * cos + cy
+    };
   };
 
   return {
     name: 'group-transform',
     onMouseDown: (e, hit, ctx) => {
       if (ctx.state.selectedIds.length <= 1 || ctx.state.editingId) return false;
-
+      const { x, y } = ctx.getCanvasCoords(e.clientX, e.clientY);
       const zoom = ctx.state.zoom;
-      const rect = getGroupBounds(ctx.state.shapes, ctx.state.selectedIds, zoom);
+      const rect = getMultiAABB(ctx.state.shapes, ctx.state.selectedIds);
       if (!rect) return false;
 
-      const { x, y } = ctx.getCanvasCoords(e.clientX, e.clientY);
-      const handleSize = 12 / zoom;
+      const currentSnapshots = ctx.state.shapes
+        .filter(s => ctx.state.selectedIds.includes(s.id))
+        .map(s => ({ id: s.id, type: s.type, x: s.x, y: s.y, width: s.width, height: s.height, rotation: s.rotation }));
+      
+      setSnapshots(currentSnapshots);
+      setInitialRect(rect);
+      setStartMouse({ x, y });
+      setVisualRotation(0);
+      setVisualScale({ sx: 1, sy: 1 });
 
-      setInitialGroupRect(rect);
-      setDragStart({ x, y });
-      setCurrentMouse({ x, y });
-      setRotationDelta(0);
+      const p = VISUAL_PADDING / zoom;
+      const pivot = { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
+      
+      const rotPos = { x: pivot.x, y: rect.y - p - 30 / zoom };
+      if (Math.hypot(x - rotPos.x, y - rotPos.y) < 12 / zoom) {
+        setPivotPoint(pivot); 
+        setDragMode('rotate'); 
+        return true;
+      }
 
       const handles: ResizeHandle[] = ['tl', 'tr', 'bl', 'br', 'tm', 'bm', 'ml', 'mr'];
       for (const h of handles) {
-        let hx = rect.x, hy = rect.y;
-        if (h.includes('r')) hx += rect.w;
-        if (h.includes('m') && !h.startsWith('m')) hx += rect.w / 2;
-        if (h.includes('b')) hy += rect.h;
-        if (h.includes('m') && h.startsWith('m')) hy += rect.h / 2;
-        if (h === 'mr') { hx = rect.x + rect.w; hy = rect.y + rect.h / 2; }
-        if (h === 'ml') { hx = rect.x; hy = rect.y + rect.h / 2; }
+        let hx = 0, hy = 0, fx = 0, fy = 0;
+        if (h.includes('l')) { hx = rect.x - p; fx = rect.x + rect.w; } 
+        else if (h.includes('r')) { hx = rect.x + rect.w + p; fx = rect.x; } 
+        else { hx = rect.x + rect.w / 2; fx = rect.x + rect.w / 2; }
+        
+        if (h.includes('t')) { hy = rect.y - p; fy = rect.y + rect.h; } 
+        else if (h.includes('b')) { hy = rect.y + rect.h + p; fy = rect.y; } 
+        else { hy = rect.y + rect.h / 2; fy = rect.y + rect.h / 2; }
 
-        if (Math.hypot(x - hx, y - hy) < handleSize) {
-          setDragMode('resize');
-          setActiveHandle(h);
-          setInitialShapes(ctx.state.shapes.filter(s => ctx.state.selectedIds.includes(s.id)));
-          
-          let fx = rect.x + rect.w, fy = rect.y + rect.h;
-          if (h.includes('l')) fx = rect.x + rect.w; else if (h.includes('r')) fx = rect.x; else fx = rect.x + rect.w / 2;
-          if (h.includes('t')) fy = rect.y + rect.h; else if (h.includes('b')) fy = rect.y; else fy = rect.y + rect.h / 2;
-          if (h === 'mr') fx = rect.x;
-          if (h === 'ml') fx = rect.x + rect.w;
-          
-          setFixedPoint({ x: fx, y: fy });
+        if (Math.hypot(x - hx, y - hy) < 12 / zoom) {
+          setDragMode('resize'); 
+          setActiveHandle(h); 
+          setFixedPoint({ x: fx, y: fy }); 
           return true;
         }
       }
 
-      const rx = rect.x + rect.w / 2;
-      const ry = rect.y - 30 / zoom;
-      if (Math.hypot(x - rx, y - ry) < handleSize) {
-        setDragMode('rotate');
-        setInitialShapes(ctx.state.shapes.filter(s => ctx.state.selectedIds.includes(s.id)));
-        return true;
+      if ((hit && ctx.state.selectedIds.includes(hit.id)) || 
+          (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h)) {
+        setDragMode('move'); 
+        return false;
       }
-
-      const isHitSelected = hit && ctx.state.selectedIds.includes(hit.id);
-      const isInsideRect = x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
-
-      if (isHitSelected || isInsideRect) {
-        setDragMode('move');
-        setInitialShapes(ctx.state.shapes.filter(s => ctx.state.selectedIds.includes(s.id)));
-        return true;
-      }
-
       return false;
     },
-
     onMouseMove: (e, ctx) => {
       const { x, y } = ctx.getCanvasCoords(e.clientX, e.clientY);
-      const zoom = ctx.state.zoom;
-      const handleSize = 12 / zoom;
+      if (!dragMode || !initialRect || snapshots.length === 0) return;
 
-      // Handle hover cursor
-      if (!dragMode && ctx.state.selectedIds.length > 1) {
-        const rect = getGroupBounds(ctx.state.shapes, ctx.state.selectedIds, zoom);
-        if (rect) {
-          // Check rotate handle
-          const rx = rect.x + rect.w / 2;
-          const ry = rect.y - 30 / zoom;
-          if (Math.hypot(x - rx, y - ry) < handleSize) {
-            ctx.setCursor('grab');
-            return;
-          }
-          // Check resize handles
-          const handles: ResizeHandle[] = ['tl', 'tr', 'bl', 'br', 'tm', 'bm', 'ml', 'mr'];
-          for (const h of handles) {
-            let hx = rect.x, hy = rect.y;
-            if (h.includes('r')) hx += rect.w;
-            if (h.includes('m') && !h.startsWith('m')) hx += rect.w / 2;
-            if (h.includes('b')) hy += rect.h;
-            if (h.includes('m') && h.startsWith('m')) hy += rect.h / 2;
-            if (h === 'mr') { hx = rect.x + rect.w; hy = rect.y + rect.h / 2; }
-            if (h === 'ml') { hx = rect.x; hy = rect.y + rect.h / 2; }
+      const dx = x - startMouse.x;
+      const dy = y - startMouse.y;
 
-            if (Math.hypot(x - hx, y - hy) < handleSize) {
-              ctx.setCursor(getCursorForHandle(h));
-              return;
+      ctx.setState(prev => {
+        let nextSX = 1, nextSY = 1, nextAngle = 0;
+
+        if (dragMode === 'rotate') {
+          nextAngle = Math.atan2(y - pivotPoint.y, x - pivotPoint.x) - Math.atan2(startMouse.y - pivotPoint.y, startMouse.x - pivotPoint.x);
+          setVisualRotation(nextAngle);
+        } else if (dragMode === 'resize') {
+          const initialDistX = startMouse.x - fixedPoint.x || 1;
+          const initialDistY = startMouse.y - fixedPoint.y || 1;
+          nextSX = (x - fixedPoint.x) / initialDistX;
+          nextSY = (y - fixedPoint.y) / initialDistY;
+          if (activeHandle === 'tm' || activeHandle === 'bm') nextSX = 1;
+          if (activeHandle === 'ml' || activeHandle === 'mr') nextSY = 1;
+          setVisualScale({ sx: nextSX, sy: nextSY });
+        }
+
+        const updateShapeRecursive = (shapes: Shape[]): Shape[] => {
+          return shapes.map(s => {
+            const snap = snapshots.find(sn => sn.id === s.id);
+            if (snap) {
+              let nextS = { ...s };
+              if (dragMode === 'move') {
+                nextS.x = snap.x + dx;
+                nextS.y = snap.y + dy;
+              } else if (dragMode === 'rotate') {
+                const oldCenter = { x: snap.x + snap.width / 2, y: snap.y + snap.height / 2 };
+                const newCenter = rotatePoint(oldCenter.x, oldCenter.y, pivotPoint.x, pivotPoint.y, nextAngle);
+                nextS.rotation = snap.rotation + nextAngle;
+                nextS.x = newCenter.x - snap.width / 2;
+                nextS.y = newCenter.y - snap.height / 2;
+              } else if (dragMode === 'resize') {
+                const oldCenter = { x: snap.x + snap.width / 2, y: snap.y + snap.height / 2 };
+                const nextCx = fixedPoint.x + (oldCenter.x - fixedPoint.x) * nextSX;
+                const nextCy = fixedPoint.y + (oldCenter.y - fixedPoint.y) * nextSY;
+                
+                let scaleW = Math.abs(nextSX);
+                let scaleH = Math.abs(nextSY);
+                
+                // 圆形特殊处理：保持等比例缩放
+                if (snap.type === 'circle') {
+                  const uniformScale = Math.max(scaleW, scaleH);
+                  scaleW = uniformScale;
+                  scaleH = uniformScale;
+                }
+
+                nextS.width = snap.width * scaleW;
+                nextS.height = snap.height * scaleH;
+                nextS.x = nextCx - nextS.width / 2;
+                nextS.y = nextCy - nextS.height / 2;
+              }
+              return nextS;
             }
-          }
-          // Check inside
-          if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) {
-            ctx.setCursor('move');
-            return;
-          }
-        }
-      }
+            if (s.children) return { ...s, children: updateShapeRecursive(s.children) };
+            return s;
+          });
+        };
 
-      if (!dragMode || !initialGroupRect) return;
-      setCurrentMouse({ x, y });
-      
-      const dx = x - dragStart.x;
-      const dy = y - dragStart.y;
-
-      if (dragMode === 'move') {
-        ctx.setState(prev => ({
-          ...prev,
-          shapes: prev.shapes.map(s => {
-            const initial = initialShapes.find(is => is.id === s.id);
-            return initial ? { ...s, x: initial.x + dx, y: initial.y + dy } : s;
-          })
-        }), false);
-        ctx.setCursor('move');
-      } 
-      else if (dragMode === 'rotate') {
-        const cx = initialGroupRect.x + initialGroupRect.w / 2;
-        const cy = initialGroupRect.y + initialGroupRect.h / 2;
-        const angle = Math.atan2(y - cy, x - cx) + Math.PI / 2;
-        const initialAngle = Math.atan2(dragStart.y - cy, dragStart.x - cx) + Math.PI / 2;
-        const deltaRotation = angle - initialAngle;
-        setRotationDelta(deltaRotation);
-
-        ctx.setState(prev => ({
-          ...prev,
-          shapes: prev.shapes.map(s => {
-            const initial = initialShapes.find(is => is.id === s.id);
-            if (!initial) return s;
-
-            const scx = initial.x + initial.width / 2;
-            const scy = initial.y + initial.height / 2;
-            const rx = scx - cx;
-            const ry = scy - cy;
-            const cos = Math.cos(deltaRotation);
-            const sin = Math.sin(deltaRotation);
-            const nx = rx * cos - ry * sin + cx;
-            const ny = rx * sin + ry * cos + cy;
-
-            return {
-              ...s,
-              x: nx - initial.width / 2,
-              y: ny - initial.height / 2,
-              rotation: initial.rotation + deltaRotation
-            };
-          })
-        }), false);
-        ctx.setCursor('grabbing');
-      }
-      else if (dragMode === 'resize' && activeHandle) {
-        let scaleX = 1, scaleY = 1;
-        const currentW = Math.abs(x - fixedPoint.x);
-        const currentH = Math.abs(y - fixedPoint.y);
-        
-        if (activeHandle.includes('l') || activeHandle.includes('r')) scaleX = currentW / initialGroupRect.w;
-        if (activeHandle.includes('t') || activeHandle.includes('b')) scaleY = currentH / initialGroupRect.h;
-        
-        if (activeHandle === 'ml' || activeHandle === 'mr') scaleY = 1;
-        if (activeHandle === 'tm' || activeHandle === 'bm') scaleX = 1;
-
-        if (e.shiftKey) {
-          const s = Math.max(scaleX, scaleY);
-          scaleX = s; scaleY = s;
-        }
-
-        ctx.setState(prev => ({
-          ...prev,
-          shapes: prev.shapes.map(s => {
-            const initial = initialShapes.find(is => is.id === s.id);
-            if (!initial) return s;
-
-            const rx = initial.x - fixedPoint.x;
-            const ry = initial.y - fixedPoint.y;
-            
-            return {
-              ...s,
-              x: fixedPoint.x + rx * scaleX,
-              y: fixedPoint.y + ry * scaleY,
-              width: initial.width * scaleX,
-              height: initial.height * scaleY
-            };
-          })
-        }), false);
-        ctx.setCursor(getCursorForHandle(activeHandle));
-      }
+        return { ...prev, shapes: updateShapeRecursive(prev.shapes) };
+      }, false);
     },
-
     onMouseUp: (e, ctx) => {
-      if (dragMode) ctx.setState(prev => ({ ...prev }), true);
-      setDragMode(null);
-      setInitialShapes([]);
-      setInitialGroupRect(null);
-      setRotationDelta(0);
-    },
-
-    onRenderForeground: (ctx) => {
-      if (ctx.state.selectedIds.length <= 1 || ctx.state.editingId) return;
-      const zoom = ctx.state.zoom;
-      
-      let rect = initialGroupRect;
-      if (!dragMode || !rect) {
-        rect = getGroupBounds(ctx.state.shapes, ctx.state.selectedIds, zoom);
+      if (dragMode) {
+        ctx.setState(prev => {
+          const finalizedShapes = prev.shapes.map(s => {
+            if (prev.selectedIds.includes(s.id) && s.type === 'group') {
+              const b = getAABB(s);
+              return { 
+                ...s, 
+                x: b.x, 
+                y: b.y, 
+                width: b.w, 
+                height: b.h, 
+                rotation: 0 
+              };
+            }
+            return s;
+          });
+          return { ...prev, shapes: finalizedShapes };
+        }, true);
       }
-      
+      setDragMode(null); 
+      setVisualRotation(0); 
+      setVisualScale({ sx: 1, sy: 1 });
+      setSnapshots([]);
+      setInitialRect(null);
+    },
+    onRenderForeground: (ctx) => {
+      if (ctx.state.selectedIds.length <= 1 || ctx.state.editingId || !ctx.renderer) return;
+      if (dragMode === 'move') return;
+
+      const rect = (dragMode === 'rotate' || dragMode === 'resize') ? initialRect : getMultiAABB(ctx.state.shapes, ctx.state.selectedIds);
       if (!rect) return;
 
-      const { renderer, state } = ctx;
-      if (!renderer) return;
-      const c = renderer.ctx;
-      const offset = state.offset;
-
-      c.save();
-      c.setTransform(1, 0, 0, 1, 0, 0);
-      c.translate(offset.x, offset.y);
-      c.scale(zoom, zoom);
-
-      if (dragMode === 'move') {
-        const dx = currentMouse.x - dragStart.x;
-        const dy = currentMouse.y - dragStart.y;
-        c.translate(dx, dy);
-      } else if (dragMode === 'rotate') {
-        const cx = rect.x + rect.w / 2;
-        const cy = rect.y + rect.h / 2;
-        c.translate(cx, cy);
-        c.rotate(rotationDelta);
-        c.translate(-cx, -cy);
-      } else if (dragMode === 'resize' && activeHandle) {
-        const currentRect = getGroupBounds(ctx.state.shapes, ctx.state.selectedIds, zoom);
-        if (currentRect) rect = currentRect;
-      }
-
-      c.strokeStyle = '#6366f1';
-      c.setLineDash([5, 5]);
-      c.lineWidth = 1.5 / zoom;
-      c.strokeRect(rect.x, rect.y, rect.w, rect.h);
-      c.setLineDash([]);
-
-      const handleSize = 8 / zoom;
-      const handles: ResizeHandle[] = ['tl', 'tr', 'bl', 'br', 'tm', 'bm', 'ml', 'mr'];
-      c.fillStyle = '#ffffff';
-      c.lineWidth = 1.5 / zoom;
+      const c = ctx.renderer.ctx, z = ctx.state.zoom, p = VISUAL_PADDING / z;
       
-      const rx = rect.x + rect.w / 2;
-      const ry = rect.y - 30 / zoom;
-      c.beginPath();
-      c.moveTo(rx, rect.y);
-      c.lineTo(rx, ry);
-      c.stroke();
-      c.beginPath();
-      c.arc(rx, ry, 5 / zoom, 0, Math.PI * 2);
-      c.fill();
-      c.stroke();
-
-      handles.forEach(h => {
-        let hx = rect.x, hy = rect.y;
-        if (h.includes('r')) hx += rect.w;
-        if (h.includes('m') && !h.startsWith('m')) hx += rect.w / 2;
-        if (h.includes('b')) hy += rect.h;
-        if (h.includes('m') && h.startsWith('m')) hy += rect.h / 2;
-        if (h === 'mr') { hx = rect.x + rect.w; hy = rect.y + rect.h / 2; }
-        if (h === 'ml') { hx = rect.x; hy = rect.y + rect.h / 2; }
-
-        c.fillRect(hx - handleSize / 2, hy - handleSize / 2, handleSize, handleSize);
-        c.strokeRect(hx - handleSize / 2, hy - handleSize / 2, handleSize, handleSize);
-      });
-
+      c.save();
+      c.setTransform(1, 0, 0, 1, 0, 0); 
+      c.translate(ctx.state.offset.x, ctx.state.offset.y); 
+      c.scale(z, z);
+      
+      if (dragMode === 'rotate' || dragMode === 'resize') {
+        const cx = pivotPoint.x, cy = pivotPoint.y;
+        if (dragMode === 'rotate') {
+          c.translate(cx, cy); 
+          c.rotate(visualRotation); 
+          c.translate(-cx, -cy);
+        } else if (dragMode === 'resize') {
+          const fx = fixedPoint.x, fy = fixedPoint.y;
+          c.translate(fx, fy);
+          c.scale(visualScale.sx, visualScale.sy);
+          c.translate(-fx, -fy);
+        }
+      } else {
+        const cx = rect.x + rect.w / 2, cy = rect.y + rect.h / 2;
+        c.translate(cx, cy); 
+        c.rotate(visualRotation); 
+        c.translate(-cx, -cy);
+      }
+      
+      c.strokeStyle = '#6366f1'; 
+      c.setLineDash([5, 5]); 
+      c.lineWidth = 1.5 / z;
+      c.strokeRect(rect.x - p, rect.y - p, rect.w + 2 * p, rect.h + 2 * p);
+      c.setLineDash([]);
+      
+      if (!dragMode) {
+        const hs = 8 / z; 
+        const handles: ResizeHandle[] = ['tl', 'tr', 'bl', 'br', 'tm', 'bm', 'ml', 'mr'];
+        c.fillStyle = '#fff';
+        const rl = { x: rect.x + rect.w / 2, y: rect.y - p - 30 / z };
+        c.beginPath(); 
+        c.moveTo(rect.x + rect.w / 2, rect.y - p); 
+        c.lineTo(rl.x, rl.y); 
+        c.stroke();
+        c.beginPath(); 
+        c.arc(rl.x, rl.y, 5 / z, 0, 7); 
+        c.fill(); 
+        c.stroke();
+        handles.forEach(h => {
+          let hx = 0, hy = 0;
+          if (h.includes('l')) hx = rect.x - p; else if (h.includes('r')) hx = rect.x + rect.w + p; else hx = rect.x + rect.w / 2;
+          if (h.includes('t')) hy = rect.y - p; else if (h.includes('b')) hy = rect.y + rect.h + p; else hy = rect.y + rect.h / 2;
+          c.fillRect(hx - hs / 2, hy - hs / 2, hs, hs); 
+          c.strokeRect(hx - hs / 2, hy - hs / 2, hs, hs);
+        });
+      }
       c.restore();
     }
   };

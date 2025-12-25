@@ -15,6 +15,7 @@ import { useTransformPlugin } from './plugins/TransformPlugin';
 import { useGroupTransformPlugin } from './plugins/GroupTransformPlugin';
 import { useRulerPlugin } from './plugins/RulerPlugin';
 import { useSmartGuidesPlugin } from './plugins/SmartGuidesPlugin';
+import { useContextMenuPlugin } from './plugins/ContextMenuPlugin';
 import { I18nProvider, useTranslation, Language } from './lang/i18n';
 import { useHistory } from './hooks/useHistory';
 
@@ -45,6 +46,7 @@ const MainApp: React.FC = () => {
   const groupTransformPlugin = useGroupTransformPlugin();
   const rulerPlugin = useRulerPlugin();
   const smartGuidesPlugin = useSmartGuidesPlugin();
+  const contextMenuPlugin = useContextMenuPlugin();
   
   const basePlugin: any = useMemo(() => ({
     name: 'core',
@@ -52,22 +54,15 @@ const MainApp: React.FC = () => {
       if (e.ctrlKey || e.metaKey) {
         const canvas = ctx.canvas;
         if (!canvas) return true;
-
         const rect = canvas.getBoundingClientRect();
         const mouseX = e.clientX - rect.left;
         const mouseY = e.clientY - rect.top;
-
-        // Calculate world coordinates before zoom
         const worldX = (mouseX - ctx.state.offset.x) / ctx.state.zoom;
         const worldY = (mouseY - ctx.state.offset.y) / ctx.state.zoom;
-
         const delta = -e.deltaY * 0.002;
         const newZoom = Math.min(10, Math.max(0.1, ctx.state.zoom * (1 + delta)));
-
-        // Calculate new offset to keep the world coordinates under the mouse fixed
         const newOffsetX = mouseX - worldX * newZoom;
         const newOffsetY = mouseY - worldY * newZoom;
-
         ctx.setState((prev) => ({ 
           ...prev, 
           zoom: newZoom,
@@ -79,7 +74,7 @@ const MainApp: React.FC = () => {
           offset: { x: prev.offset.x - e.deltaX, y: prev.offset.y - e.deltaY }
         }), false);
       }
-      return true; // Always return true to capture wheel events on the canvas
+      return true;
     },
     onKeyDown: (e: KeyboardEvent, ctx: PluginContext) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
@@ -103,13 +98,14 @@ const MainApp: React.FC = () => {
 
   const plugins = useMemo(() => [
     basePlugin, 
+    groupTransformPlugin, // 变换插件前置，优先捕获控制柄点击
+    transformPlugin,      // 变换插件前置，优先捕获控制柄点击
+    selectionPlugin,      // 选择插件后置，仅在未命中控制柄时处理选择/取消选择
     rulerPlugin,
-    smartGuidesPlugin, // Render smart guides below interactive controls but above background
+    smartGuidesPlugin,
     textPlugin, 
-    groupTransformPlugin,
-    transformPlugin, 
-    selectionPlugin
-  ], [basePlugin, textPlugin, groupTransformPlugin, transformPlugin, selectionPlugin, rulerPlugin, smartGuidesPlugin]);
+    contextMenuPlugin
+  ], [basePlugin, textPlugin, groupTransformPlugin, transformPlugin, selectionPlugin, rulerPlugin, smartGuidesPlugin, contextMenuPlugin]);
 
   const addShape = useCallback((type: ShapeType) => {
     const newShape: Shape = {

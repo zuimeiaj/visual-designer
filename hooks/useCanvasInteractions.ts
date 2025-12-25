@@ -1,5 +1,6 @@
 
-import { useState, useCallback } from 'react';
+// Add React import for types like React.Dispatch, React.SetStateAction, React.RefObject, and React.MouseEvent
+import React, { useState, useCallback } from 'react';
 import { CanvasState, Shape } from '../types';
 import { Scene } from '../models/Scene';
 import { TextShape } from '../models/UIShape';

@@ -1,10 +1,8 @@
 
-// Added ShapeType to imports
 import { Shape, ShapeType } from "../types";
 
 export abstract class UIShape {
   public id: string;
-  // Added type property to UIShape
   public type: ShapeType;
   public x: number;
   public y: number;
@@ -19,7 +17,6 @@ export abstract class UIShape {
 
   constructor(data: Shape) {
     this.id = data.id;
-    // Initialize type property
     this.type = data.type;
     this.x = data.x;
     this.y = data.y;
@@ -29,47 +26,72 @@ export abstract class UIShape {
     this.fill = data.fill;
     this.stroke = data.stroke;
     this.strokeWidth = data.strokeWidth;
-    this.onCreated();
   }
 
   public onCreated(): void {}
   public onLayout(): void {}
-  public onLayer(index: number): void {
-    this.layer = index;
-  }
+  public onLayer(index: number): void { this.layer = index; }
 
   public draw(ctx: CanvasRenderingContext2D, zoom: number): void {
     ctx.save();
     const cx = this.x + this.width / 2;
     const cy = this.y + this.height / 2;
-    
     ctx.translate(cx, cy);
     ctx.rotate(this.rotation);
     ctx.translate(-cx, -cy);
-    
     this.onDraw(ctx, zoom);
     ctx.restore();
   }
 
   public abstract onDraw(ctx: CanvasRenderingContext2D, zoom: number): void;
 
+  public getCorners() {
+    const cx = this.x + this.width / 2;
+    const cy = this.y + this.height / 2;
+    const cos = Math.cos(this.rotation);
+    const sin = Math.sin(this.rotation);
+    const hw = this.width / 2;
+    const hh = this.height / 2;
+    return [
+      { x: -hw, y: -hh }, { x: hw, y: -hh },
+      { x: hw, y: hh }, { x: -hw, y: hh }
+    ].map(p => ({
+      x: cx + p.x * cos - p.y * sin,
+      y: cy + p.x * sin + p.y * cos
+    }));
+  }
+
+  public getAABB() {
+    const corners = this.getCorners();
+    const xs = corners.map(p => p.x);
+    const ys = corners.map(p => p.y);
+    const minX = Math.min(...xs), minY = Math.min(...ys);
+    return { x: minX, y: minY, w: Math.max(...xs) - minX, h: Math.max(...ys) - minY };
+  }
+
   public hitTest(px: number, py: number): boolean {
     const cx = this.x + this.width / 2;
     const cy = this.y + this.height / 2;
-    const dx = px - cx;
-    const dy = py - cy;
-    const cos = Math.cos(-this.rotation);
-    const sin = Math.sin(-this.rotation);
+    const dx = px - cx, dy = py - cy;
+    const cos = Math.cos(-this.rotation), sin = Math.sin(-this.rotation);
     const lx = dx * cos - dy * sin + cx;
     const ly = dx * sin + dy * cos + cy;
-
-    return lx >= this.x && lx <= this.x + this.width &&
-           ly >= this.y && ly <= this.y + this.height;
+    return lx >= this.x && lx <= this.x + this.width && ly >= this.y && ly <= this.y + this.height;
   }
 
   public update(data: Partial<Shape>): void {
     Object.assign(this, data);
-    this.onLayout();
+  }
+
+  public static create(data: Shape): UIShape {
+    switch (data.type) {
+      case 'rect': return new RectShape(data);
+      case 'circle': return new CircleShape(data);
+      case 'text': return new TextShape(data);
+      case 'image': return new ImageShape(data);
+      case 'group': return new GroupShape(data);
+      default: return new RectShape(data);
+    }
   }
 }
 
@@ -88,7 +110,7 @@ export class RectShape extends UIShape {
 export class CircleShape extends UIShape {
   public onDraw(ctx: CanvasRenderingContext2D): void {
     ctx.beginPath();
-    ctx.arc(this.x + this.width / 2, this.y + this.height / 2, this.width / 2, 0, Math.PI * 2);
+    ctx.arc(this.x + this.width / 2, this.y + this.height / 2, Math.min(this.width, this.height) / 2, 0, Math.PI * 2);
     ctx.fillStyle = this.fill;
     ctx.fill();
     if (this.stroke !== 'none') {
@@ -99,128 +121,95 @@ export class CircleShape extends UIShape {
   }
 }
 
+export class GroupShape extends UIShape {
+  public children: UIShape[] = [];
+  constructor(data: Shape) {
+    super(data);
+    if (data.children) this.children = data.children.map(c => UIShape.create(c));
+  }
+
+  // Implementation of abstract onDraw. Since GroupShape overrides draw to handle 
+  // children drawing directly, onDraw is left empty.
+  public onDraw(ctx: CanvasRenderingContext2D, zoom: number): void {}
+
+  public draw(ctx: CanvasRenderingContext2D, zoom: number): void {
+    // Group bounds are positive orthogonal, but rotation is 0. Children have their own transforms.
+    this.children.forEach(child => child.draw(ctx, zoom));
+  }
+  public getAABB() {
+    if (this.children.length === 0) return { x: this.x, y: this.y, w: this.width, h: this.height };
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    this.children.forEach(c => {
+      const b = c.getAABB();
+      minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
+      maxX = Math.max(maxX, b.x + b.w); maxY = Math.max(maxY, b.y + b.h);
+    });
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  }
+  public hitTest(px: number, py: number): boolean {
+    return this.children.some(child => child.hitTest(px, py));
+  }
+}
+
 export class TextShape extends UIShape {
   public text: string = '';
   public fontSize: number = 16;
-
   constructor(data: Shape) {
     super(data);
     this.text = data.text || '';
     this.fontSize = data.fontSize || 16;
   }
-
-  /**
-   * Internal helper to calculate wrapped lines based on width and font.
-   */
-  private static getWrappedLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, fontSize: number): string[] {
-    ctx.font = `${fontSize}px Inter`;
-    const lines: string[] = [];
-    const paragraphs = text.split('\n');
-
-    paragraphs.forEach(paragraph => {
-      if (paragraph === '') {
-        lines.push('');
-        return;
-      }
-      const words = paragraph.split(' ');
-      let currentLine = '';
-
-      for (let i = 0; i < words.length; i++) {
-        const word = words[i];
-        const testLine = currentLine ? currentLine + ' ' + word : word;
-        const metrics = ctx.measureText(testLine);
-
-        if (metrics.width <= maxWidth) {
-          currentLine = testLine;
-        } else {
-          // If the word itself is too long for a single line, we break it character by character
-          if (ctx.measureText(word).width > maxWidth) {
-            if (currentLine) lines.push(currentLine);
-            currentLine = '';
-
-            let charLine = '';
-            for (let j = 0; j < word.length; j++) {
-              const testCharLine = charLine + word[j];
-              if (ctx.measureText(testCharLine).width > maxWidth) {
-                if (charLine) lines.push(charLine);
-                charLine = word[j];
-              } else {
-                charLine = testCharLine;
-              }
-            }
-            currentLine = charLine;
-          } else {
-            // Standard word wrap
-            if (currentLine) lines.push(currentLine);
-            currentLine = word;
-          }
-        }
-      }
-      lines.push(currentLine);
-    });
-    return lines;
-  }
-
   public static measureHeight(text: string, width: number, fontSize: number): number {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     if (!ctx) return fontSize * 1.2;
-    
-    const lines = this.getWrappedLines(ctx, text, width, fontSize);
-    return lines.length * fontSize * 1.2;
+    ctx.font = `${fontSize}px Inter`;
+    const paragraphs = text.split('\n');
+    let lineCount = 0;
+    paragraphs.forEach(p => {
+      if (!p) { lineCount++; return; }
+      const words = p.split(' ');
+      let line = '';
+      words.forEach(w => {
+        const test = line ? line + ' ' + w : w;
+        if (ctx.measureText(test).width > width) { lineCount++; line = w; }
+        else line = test;
+      });
+      lineCount++;
+    });
+    return lineCount * fontSize * 1.2;
   }
-
   public onDraw(ctx: CanvasRenderingContext2D): void {
     ctx.fillStyle = this.fill;
     ctx.font = `${this.fontSize}px Inter`;
     ctx.textBaseline = 'top';
-    
-    const lines = TextShape.getWrappedLines(ctx, this.text, this.width, this.fontSize);
-    const lineHeight = this.fontSize * 1.2;
-    
-    lines.forEach((line, index) => {
-      ctx.fillText(line, this.x, this.y + index * lineHeight);
+    const paragraphs = this.text.split('\n');
+    const lh = this.fontSize * 1.2;
+    let currY = this.y;
+    paragraphs.forEach(p => {
+      const words = p.split(' ');
+      let line = '';
+      words.forEach(w => {
+        const test = line ? line + ' ' + w : w;
+        if (ctx.measureText(test).width > this.width) {
+          ctx.fillText(line, this.x, currY);
+          currY += lh; line = w;
+        } else line = test;
+      });
+      ctx.fillText(line, this.x, currY);
+      currY += lh;
     });
-  }
-
-  public update(data: Partial<Shape>): void {
-    super.update(data);
-    if (data.text !== undefined) this.text = data.text;
-    if (data.fontSize !== undefined) this.fontSize = data.fontSize;
   }
 }
 
 export class ImageShape extends UIShape {
-  public src?: string;
   private img: HTMLImageElement | null = null;
-
   constructor(data: Shape) {
     super(data);
-    this.src = data.src;
-    this.load();
+    if (data.src) { this.img = new Image(); this.img.src = data.src; }
   }
-
-  private load() {
-    if (this.src) {
-      this.img = new Image();
-      this.img.src = this.src;
-    }
-  }
-
   public onDraw(ctx: CanvasRenderingContext2D): void {
-    if (this.img?.complete) {
-      ctx.drawImage(this.img, this.x, this.y, this.width, this.height);
-    } else {
-      ctx.fillStyle = '#18181b';
-      ctx.fillRect(this.x, this.y, this.width, this.height);
-    }
-  }
-
-  public update(data: Partial<Shape>): void {
-    super.update(data);
-    if (data.src !== undefined && data.src !== this.src) {
-      this.src = data.src;
-      this.load();
-    }
+    if (this.img?.complete) ctx.drawImage(this.img, this.x, this.y, this.width, this.height);
+    else { ctx.fillStyle = '#18181b'; ctx.fillRect(this.x, this.y, this.width, this.height); }
   }
 }
