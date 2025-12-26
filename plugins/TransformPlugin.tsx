@@ -15,12 +15,11 @@ export const useTransformPlugin = (): CanvasPlugin => {
   const [visualRotation, setVisualRotation] = useState(0);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   
-  // 用于物理吸附的累积残差，防止闪烁
   const [snapResidual, setSnapResidual] = useState({ x: 0, y: 0 });
 
   const VISUAL_PADDING = 4;
   const SNAP_THRESHOLD_PX = 5;
-  const SNAP_RELEASE_PX = 8; // 脱离吸附所需的最小距离
+  const SNAP_RELEASE_PX = 8;
 
   const getAABB = (s: Shape): { x: number, y: number, w: number, h: number } => {
     if (s.children && s.children.length > 0) {
@@ -67,9 +66,20 @@ export const useTransformPlugin = (): CanvasPlugin => {
     return undefined;
   };
 
-  const updateInTree = (shapes: Shape[], id: string, data: Partial<Shape>): Shape[] => {
+  const moveTree = (s: Shape, dx: number, dy: number): Shape => {
+    const nextS = { ...s, x: s.x + dx, y: s.y + dy };
+    if (nextS.children) {
+      nextS.children = nextS.children.map(c => moveTree(c, dx, dy));
+    }
+    return nextS;
+  };
+
+  const updateInTree = (shapes: Shape[], id: string, data: Partial<Shape> | ((s: Shape) => Shape)): Shape[] => {
     return shapes.map(s => {
-      if (s.id === id) return { ...s, ...data };
+      if (s.id === id) {
+        if (typeof data === 'function') return data(s);
+        return { ...s, ...data };
+      }
       if (s.children) return { ...s, children: updateInTree(s.children, id, data) };
       return s;
     });
@@ -78,17 +88,20 @@ export const useTransformPlugin = (): CanvasPlugin => {
   return {
     name: 'transform',
     onMouseDown: (e, hit, ctx) => {
-      if (ctx.state.editingId) return false;
+      if (ctx.state.editingId || e.button !== 0) return false;
       const { x, y } = ctx.getCanvasCoords(e.clientX, e.clientY);
       const zoom = ctx.state.zoom;
 
       setSnapResidual({ x: 0, y: 0 });
 
+      // 首先尝试检查控制柄
       if (ctx.state.selectedIds.length === 1) {
         const s = findShapeInTree(ctx.state.shapes, ctx.state.selectedIds[0]);
         if (s) {
           const pivot = { x: s.x + s.width / 2, y: s.y + s.height / 2 };
           const cos = Math.cos(s.rotation), sin = Math.sin(s.rotation);
+          
+          // 旋转柄
           const rotPos = { x: s.x + s.width / 2, y: s.y - (VISUAL_PADDING / zoom) - 30 / zoom };
           const rotWorld = { 
             x: (rotPos.x - pivot.x) * cos - (rotPos.y - pivot.y) * sin + pivot.x, 
@@ -98,6 +111,8 @@ export const useTransformPlugin = (): CanvasPlugin => {
             setDragMode('rotate'); setPivotPoint(pivot); setVisualRotation(s.rotation);
             setDraggedId(s.id); setLastMouse({ x, y }); return true;
           }
+
+          // 缩放柄
           const handles: ResizeHandle[] = ['tl', 'tr', 'bl', 'br', 'tm', 'bm', 'ml', 'mr'];
           for (const h of handles) {
             let lx = 0, ly = 0;
@@ -122,11 +137,14 @@ export const useTransformPlugin = (): CanvasPlugin => {
         }
       }
 
+      // 命中检测移动
       const targetId = hit ? getTopmostParentId(ctx.state.shapes, hit.id) : null;
       if (targetId) {
         setDragMode('move');
         setDraggedId(targetId);
         setLastMouse({ x, y });
+        // 注意：这里返回 false 允许 SelectionPlugin 更新选中状态，
+        // 但 TransformPlugin 已经准备好拖拽。
         return false; 
       }
       return false;
@@ -141,7 +159,6 @@ export const useTransformPlugin = (): CanvasPlugin => {
       ctx.setState(prev => {
         const s = findShapeInTree(prev.shapes, draggedId);
         if (!s) return prev;
-        let nextS = { ...s };
 
         if (dragMode === 'move') {
           let nx = s.x + dx;
@@ -204,13 +221,22 @@ export const useTransformPlugin = (): CanvasPlugin => {
           if (Math.abs(nextResidual.y) > releaseThreshold) nextResidual.y = 0;
           
           setSnapResidual(nextResidual);
-          nextS = { ...s, x: finalX, y: finalY };
+
+          const actualDx = finalX - s.x;
+          const actualDy = finalY - s.y;
+
+          // 使用 moveTree 递归移动所有子元素
+          return { 
+            ...prev, 
+            shapes: syncParentBounds(updateInTree(prev.shapes, draggedId, (currentS) => moveTree(currentS, actualDx, actualDy)), draggedId) 
+          };
         } else if (dragMode === 'rotate') {
           const angle = Math.atan2(y - pivotPoint.y, x - pivotPoint.x) - Math.atan2(lastMouse.y - dy - pivotPoint.y, lastMouse.x - dx - pivotPoint.x);
           setVisualRotation(v => v + angle);
           const ncx = (s.x + s.width / 2 - pivotPoint.x) * Math.cos(angle) - (s.y + s.height / 2 - pivotPoint.y) * Math.sin(angle) + pivotPoint.x;
           const ncy = (s.x + s.width / 2 - pivotPoint.x) * Math.sin(angle) + (s.y + s.height / 2 - pivotPoint.y) * Math.cos(angle) + pivotPoint.y;
-          nextS = { ...s, x: ncx - s.width / 2, y: ncy - s.height / 2, rotation: s.rotation + angle };
+          const nextS = { ...s, x: ncx - s.width / 2, y: ncy - s.height / 2, rotation: s.rotation + angle };
+          return { ...prev, shapes: syncParentBounds(updateInTree(prev.shapes, draggedId, nextS), draggedId) };
         } else if (dragMode === 'resize' && activeHandle) {
           const cos = Math.cos(-s.rotation), sin = Math.sin(-s.rotation);
           const localMouse = { x: (x - fixedPoint.x) * cos - (y - fixedPoint.y) * sin, y: (x - fixedPoint.x) * sin + (y - fixedPoint.y) * cos };
@@ -223,9 +249,10 @@ export const useTransformPlugin = (): CanvasPlugin => {
           if (activeHandle.includes('l')) vcx = -nw / 2; else if (activeHandle.includes('r')) vcx = nw / 2;
           if (activeHandle.includes('t')) vcy = -nh / 2; else if (activeHandle.includes('b')) vcy = nh / 2;
           const rcos = Math.cos(s.rotation), rsin = Math.sin(s.rotation);
-          nextS = { ...s, width: nw, height: nh, x: (vcx * rcos - vcy * rsin + fixedPoint.x) - nw/2, y: (vcx * rsin + vcy * rcos + fixedPoint.y) - nh/2 };
+          const nextS = { ...s, width: nw, height: nh, x: (vcx * rcos - vcy * rsin + fixedPoint.x) - nw/2, y: (vcx * rsin + vcy * rcos + fixedPoint.y) - nh/2 };
+          return { ...prev, shapes: syncParentBounds(updateInTree(prev.shapes, draggedId, nextS), draggedId) };
         }
-        return { ...prev, shapes: syncParentBounds(updateInTree(prev.shapes, draggedId, nextS), draggedId) };
+        return prev;
       }, false);
     },
     onMouseUp: (e, ctx) => {
@@ -236,7 +263,6 @@ export const useTransformPlugin = (): CanvasPlugin => {
       const { state, renderer } = ctx;
       if (!renderer || state.selectedIds.length !== 1 || state.editingId) return;
       
-      // 当处于移动模式时，不显示边框和控制柄，以保持画面简洁
       if (dragMode === 'move') return;
 
       const s = findShapeInTree(state.shapes, state.selectedIds[0]);

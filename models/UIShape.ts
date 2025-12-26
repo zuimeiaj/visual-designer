@@ -128,6 +128,15 @@ export class GroupShape extends UIShape {
     if (data.children) this.children = data.children.map(c => UIShape.create(c));
   }
 
+  public update(data: Partial<Shape>): void {
+    // 关键修复：防止 Object.assign 将 UIShape 实例数组替换为 plain object 数组
+    const { children, ...rest } = data;
+    super.update(rest);
+    if (children) {
+      this.children = children.map(c => UIShape.create(c));
+    }
+  }
+
   // Implementation of abstract onDraw. Since GroupShape overrides draw to handle 
   // children drawing directly, onDraw is left empty.
   public onDraw(ctx: CanvasRenderingContext2D, zoom: number): void {}
@@ -136,6 +145,7 @@ export class GroupShape extends UIShape {
     // Group bounds are positive orthogonal, but rotation is 0. Children have their own transforms.
     this.children.forEach(child => child.draw(ctx, zoom));
   }
+
   public getAABB() {
     if (this.children.length === 0) return { x: this.x, y: this.y, w: this.width, h: this.height };
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -146,6 +156,7 @@ export class GroupShape extends UIShape {
     });
     return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
   }
+
   public hitTest(px: number, py: number): boolean {
     return this.children.some(child => child.hitTest(px, py));
   }

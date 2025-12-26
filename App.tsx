@@ -82,6 +82,13 @@ const MainApp: React.FC = () => {
         else ctx.undo();
         return true;
       }
+      
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'g') {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent('canvas-command', { detail: e.shiftKey ? 'ungroup' : 'group' }));
+        return true;
+      }
+
       if (e.key === 'Delete' || e.key === 'Backspace') {
          if (ctx.state.selectedIds.length > 0 && !ctx.state.editingId) {
             ctx.setState((prev) => ({
@@ -96,15 +103,16 @@ const MainApp: React.FC = () => {
     }
   }), []);
 
+  // 排序至关重要：textPlugin 应该在 selectionPlugin 之前以正确响应双击编辑
   const plugins = useMemo(() => [
     basePlugin, 
-    groupTransformPlugin, // 变换插件前置，优先捕获控制柄点击
-    transformPlugin,      // 变换插件前置，优先捕获控制柄点击
-    selectionPlugin,      // 选择插件后置，仅在未命中控制柄时处理选择/取消选择
-    rulerPlugin,
-    smartGuidesPlugin,
+    contextMenuPlugin,
     textPlugin, 
-    contextMenuPlugin
+    groupTransformPlugin, 
+    transformPlugin,      
+    selectionPlugin,      
+    rulerPlugin,
+    smartGuidesPlugin
   ], [basePlugin, textPlugin, groupTransformPlugin, transformPlugin, selectionPlugin, rulerPlugin, smartGuidesPlugin, contextMenuPlugin]);
 
   const addShape = useCallback((type: ShapeType) => {

@@ -18,9 +18,8 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
   const rendererRef = useRef<CanvasRenderer | null>(null);
   const scene = useMemo(() => new Scene(state.shapes), []);
   
-  // Robust Synchronization: Handles property updates, additions, removals, and REORDERING.
   useEffect(() => {
-    // 1. Sync properties and add missing shapes
+    // 1. 同步属性与新增形状
     state.shapes.forEach(s => {
       const existing = scene.getShapes().find(os => os.id === s.id);
       if (existing) {
@@ -30,20 +29,28 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
       }
     });
 
-    // 2. Remove shapes that are no longer in state
+    // 2. 移除已删除形状
     const shapeIdsInState = new Set(state.shapes.map(s => s.id));
-    scene.getShapes().forEach(s => {
-      if (!shapeIdsInState.has(s.id)) scene.remove(s.id);
+    const currentShapes = scene.getShapes();
+    for (let i = currentShapes.length - 1; i >= 0; i--) {
+      if (!shapeIdsInState.has(currentShapes[i].id)) {
+        scene.remove(currentShapes[i].id);
+      }
+    }
+
+    // 3. 严格同步层级排序
+    const indexMap = new Map();
+    state.shapes.forEach((s, i) => indexMap.set(s.id, i));
+    
+    scene.getShapes().sort((a, b) => {
+      const idxA = indexMap.get(a.id) ?? -1;
+      const idxB = indexMap.get(b.id) ?? -1;
+      return idxA - idxB;
     });
 
-    // 3. FIX: Reorder internal scene list to match state.shapes order
-    // The rendering order in Scene.ts depends on the array index.
-    const internalShapes = scene.getShapes();
-    internalShapes.sort((a, b) => {
-      const indexA = state.shapes.findIndex(s => s.id === a.id);
-      const indexB = state.shapes.findIndex(s => s.id === b.id);
-      return indexA - indexB;
-    });
+    // 触发内部生命周期刷新
+    (scene as any).processLifecycle?.();
+    
   }, [state.shapes, scene]);
 
   useEffect(() => {
@@ -102,6 +109,7 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
 
   const onContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
+    e.stopPropagation(); // 关键：阻止冒泡，避免被 window 的 native contextmenu 监听器捕获
     const { x, y } = getCanvasCoords(e.clientX, e.clientY);
     const hit = scene.hitTest(x, y);
     for (const p of plugins) {

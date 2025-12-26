@@ -5,7 +5,6 @@ import { useState } from 'react';
 export const useSelectionPlugin = (): CanvasPlugin => {
   const [marquee, setMarquee] = useState<{ start: { x: number, y: number }, end: { x: number, y: number } } | null>(null);
 
-  // 递归寻找最外层持久化Group
   const getTopmostParentId = (shapes: Shape[], targetId: string): string => {
     const parent = shapes.find(s => s.children?.some(c => c.id === targetId));
     return parent ? getTopmostParentId(shapes, parent.id) : targetId;
@@ -39,7 +38,6 @@ export const useSelectionPlugin = (): CanvasPlugin => {
       const { x, y } = ctx.getCanvasCoords(e.clientX, e.clientY);
       
       if (hit) {
-        // 单击：选中最外层
         const targetId = getTopmostParentId(ctx.state.shapes, hit.id);
         if (!ctx.state.selectedIds.includes(targetId)) {
           ctx.setState(prev => ({
@@ -47,9 +45,8 @@ export const useSelectionPlugin = (): CanvasPlugin => {
             selectedIds: e.shiftKey ? [...prev.selectedIds, targetId] : [targetId]
           }), false);
         }
-        return false; // 返回false，允许后续插件（Transform）立即触发移动
+        return false;
       } else {
-        // 点击空白
         if (!e.shiftKey) ctx.setState(prev => ({ ...prev, selectedIds: [] }), false);
         setMarquee({ start: { x, y }, end: { x, y } });
         return true;
@@ -57,9 +54,10 @@ export const useSelectionPlugin = (): CanvasPlugin => {
     },
     onDoubleClick: (e, hit, ctx) => {
       if (hit) {
-        // 双击：直接选中底层Shape
+        // 更新选中状态
         ctx.setState(prev => ({ ...prev, selectedIds: [hit.id] }), false);
-        return true;
+        // 如果是文本，返回 false 允许 TextEditPlugin 继续处理
+        return hit.type !== 'text';
       }
       return false;
     },

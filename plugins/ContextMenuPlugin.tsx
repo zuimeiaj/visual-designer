@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   CanvasPlugin, 
   PluginContext, 
@@ -27,79 +27,112 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
   const [menu, setMenu] = useState<MenuState>({ x: 0, y: 0, visible: false });
   const { t } = useTranslation();
 
-  const closeMenu = () => setMenu(prev => ({ ...prev, visible: false }));
+  const closeMenu = useCallback(() => setMenu(prev => ({ ...prev, visible: false })), []);
 
+  // 使用延迟监听器防止菜单在开启时立即被自身的冒泡事件关闭
   useEffect(() => {
     if (menu.visible) {
       const handleGlobalClick = () => closeMenu();
-      window.addEventListener('mousedown', handleGlobalClick);
-      return () => window.removeEventListener('mousedown', handleGlobalClick);
+      
+      const timer = setTimeout(() => {
+        window.addEventListener('mousedown', handleGlobalClick);
+        window.addEventListener('wheel', handleGlobalClick);
+        window.addEventListener('contextmenu', handleGlobalClick);
+      }, 0);
+      
+      return () => {
+        clearTimeout(timer);
+        window.removeEventListener('mousedown', handleGlobalClick);
+        window.removeEventListener('wheel', handleGlobalClick);
+        window.removeEventListener('contextmenu', handleGlobalClick);
+      };
     }
-  }, [menu.visible]);
+  }, [menu.visible, closeMenu]);
 
-  const moveLayer = (ctx: PluginContext, direction: 'up' | 'down' | 'top' | 'bottom') => {
+  const getTopmostParentId = (shapes: Shape[], targetId: string): string => {
+    const parent = shapes.find(s => s.children?.some(c => c.id === targetId));
+    return parent ? getTopmostParentId(shapes, parent.id) : targetId;
+  };
+
+  const getAABB = (s: Shape): { x: number, y: number, w: number, h: number } => {
+    if (s.type === 'group' && s.children && s.children.length > 0) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      s.children.forEach(c => {
+        const b = getAABB(c);
+        minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
+        maxX = Math.max(maxX, b.x + b.w); maxY = Math.max(maxY, b.y + b.h);
+      });
+      return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+    }
+    const cx = s.x + s.width / 2, cy = s.y + s.height / 2;
+    const cos = Math.cos(s.rotation), sin = Math.sin(s.rotation);
+    const hw = s.width / 2, hh = s.height / 2;
+    const corners = [
+      { x: -hw, y: -hh }, { x: hw, y: -hh },
+      { x: hw, y: hh }, { x: -hw, y: hh }
+    ].map(p => ({
+      x: cx + p.x * cos - p.y * sin,
+      y: cy + p.x * sin + p.y * cos
+    }));
+    const xs = corners.map(p => p.x), ys = corners.map(p => p.y);
+    const minX = Math.min(...xs), minY = Math.min(...ys);
+    return { x: minX, y: minY, w: Math.max(...xs) - minX, h: Math.max(...ys) - minY };
+  };
+
+  const reorder = (ctx: PluginContext, type: 'front' | 'back' | 'forward' | 'backward') => {
     const { selectedIds, shapes } = ctx.state;
     if (selectedIds.length === 0) return;
 
-    let newShapes = [...shapes];
+    // 获取所有选中元素的顶层父节点 ID
+    const topSelectedIds = Array.from(new Set(selectedIds.map(id => getTopmostParentId(shapes, id))));
     
-    // Multi-selection layer movement logic
-    const selectedIndices = selectedIds
-      .map(id => newShapes.findIndex(s => s.id === id))
-      .filter(idx => idx !== -1)
-      .sort((a, b) => a - b);
+    // 按当前在 shapes 数组中的顺序对选中的顶层 ID 进行排序，以保持其相对层级
+    const sortedSelectedTopIds = [...topSelectedIds].sort((a, b) => {
+      return shapes.findIndex(s => s.id === a) - shapes.findIndex(s => s.id === b);
+    });
 
-    if (selectedIndices.length === 0) return;
+    let newShapes = [...shapes];
 
-    const itemsToMove = selectedIndices.map(idx => newShapes[idx]);
-    const others = newShapes.filter(s => !selectedIds.includes(s.id));
-
-    switch (direction) {
-      case 'top':
-        newShapes = [...others, ...itemsToMove];
-        break;
-      case 'bottom':
-        newShapes = [...itemsToMove, ...others];
-        break;
-      case 'up': {
-        const lastIdx = selectedIndices[selectedIndices.length - 1];
-        if (lastIdx < newShapes.length - 1) {
-          // Move the whole block one step up
-          const targetIndex = lastIdx + 1;
-          const result: Shape[] = [];
-          let moveCounter = 0;
-          for (let i = 0; i < newShapes.length; i++) {
-            if (selectedIds.includes(newShapes[i].id)) continue;
-            result.push(newShapes[i]);
-            if (result.length === targetIndex - selectedIndices.length + 1) {
-              result.push(...itemsToMove);
-            }
+    if (type === 'front') {
+      const selected = newShapes.filter(s => sortedSelectedTopIds.includes(s.id));
+      const rest = newShapes.filter(s => !sortedSelectedTopIds.includes(s.id));
+      newShapes = [...rest, ...selected];
+    } 
+    else if (type === 'back') {
+      const selected = newShapes.filter(s => sortedSelectedTopIds.includes(s.id));
+      const rest = newShapes.filter(s => !sortedSelectedTopIds.includes(s.id));
+      newShapes = [...selected, ...rest];
+    } 
+    else if (type === 'forward') {
+      // 从上往下（数组尾部往头部）处理，避免元素互相跳跃
+      for (let i = sortedSelectedTopIds.length - 1; i >= 0; i--) {
+        const id = sortedSelectedTopIds[i];
+        const idx = newShapes.findIndex(s => s.id === id);
+        if (idx < newShapes.length - 1) {
+          const targetIdx = idx + 1;
+          const nextShape = newShapes[targetIdx];
+          // 如果上方的元素不在选中列表中，则交换
+          if (!sortedSelectedTopIds.includes(nextShape.id)) {
+            const item = newShapes.splice(idx, 1)[0];
+            newShapes.splice(targetIdx, 0, item);
           }
-          // If the target was beyond the current loop, push it at the end
-          if (result.length < newShapes.length) {
-             itemsToMove.forEach(item => {
-               if(!result.includes(item)) result.push(item);
-             });
-          }
-          newShapes = result;
         }
-        break;
       }
-      case 'down': {
-        const firstIdx = selectedIndices[0];
-        if (firstIdx > 0) {
-          const targetIndex = firstIdx - 1;
-          const result: Shape[] = [];
-          for (let i = 0; i < newShapes.length; i++) {
-            if (selectedIds.includes(newShapes[i].id)) continue;
-            if (result.length === targetIndex) {
-              result.push(...itemsToMove);
-            }
-            result.push(newShapes[i]);
+    } 
+    else if (type === 'backward') {
+      // 从下往上（数组头部往尾部）处理
+      for (let i = 0; i < sortedSelectedTopIds.length; i++) {
+        const id = sortedSelectedTopIds[i];
+        const idx = newShapes.findIndex(s => s.id === id);
+        if (idx > 0) {
+          const targetIdx = idx - 1;
+          const prevShape = newShapes[targetIdx];
+          // 如果下方的元素不在选中列表中，则交换
+          if (!sortedSelectedTopIds.includes(prevShape.id)) {
+            const item = newShapes.splice(idx, 1)[0];
+            newShapes.splice(targetIdx, 0, item);
           }
-          newShapes = result;
         }
-        break;
       }
     }
 
@@ -109,17 +142,17 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
 
   const groupSelected = (ctx: PluginContext) => {
     const { selectedIds, shapes } = ctx.state;
-    if (selectedIds.length < 2) return;
+    const topSelectedIds = Array.from(new Set(selectedIds.map(id => getTopmostParentId(shapes, id))));
+    if (topSelectedIds.length < 2) return;
 
-    const groupMembers = shapes.filter(s => selectedIds.includes(s.id));
-    const remainingShapes = shapes.filter(s => !selectedIds.includes(s.id));
+    const groupMembers = shapes.filter(s => topSelectedIds.includes(s.id));
+    const remainingShapes = shapes.filter(s => !topSelectedIds.includes(s.id));
 
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     groupMembers.forEach(s => {
-      minX = Math.min(minX, s.x);
-      minY = Math.min(minY, s.y);
-      maxX = Math.max(maxX, s.x + s.width);
-      maxY = Math.max(maxY, s.y + s.height);
+      const b = getAABB(s);
+      minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
+      maxX = Math.max(maxX, b.x + b.w); maxY = Math.max(maxY, b.y + b.h);
     });
 
     const newGroup: Shape = {
@@ -147,18 +180,15 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
   const ungroupSelected = (ctx: PluginContext) => {
     const { selectedIds, shapes } = ctx.state;
     if (selectedIds.length !== 1) return;
-
     const id = selectedIds[0];
     const group = shapes.find(s => s.id === id);
     if (!group || group.type !== 'group' || !group.children) return;
 
     const remainingShapes = shapes.filter(s => s.id !== id);
-    const dissolvedShapes = group.children;
-
     ctx.setState(prev => ({
       ...prev,
-      shapes: [...remainingShapes, ...dissolvedShapes],
-      selectedIds: dissolvedShapes.map(s => s.id)
+      shapes: [...remainingShapes, ...group.children!],
+      selectedIds: group.children!.map(s => s.id)
     }), true);
     closeMenu();
   };
@@ -166,19 +196,33 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
   return {
     name: 'context-menu',
     onContextMenu: (e, hit, ctx) => {
+      e.preventDefault();
+      // 阻止事件冒泡到 window 触发 closeMenu
+      e.stopPropagation();
+
       if (hit && !ctx.state.selectedIds.includes(hit.id)) {
-        ctx.setState(prev => ({ ...prev, selectedIds: [hit.id] }), false);
+        const tid = getTopmostParentId(ctx.state.shapes, hit.id);
+        ctx.setState(prev => ({ ...prev, selectedIds: [tid] }), false);
       }
       setMenu({ x: e.clientX, y: e.clientY, visible: true });
       return true;
     },
     onRenderOverlay: (ctx) => {
+      useEffect(() => {
+        const handler = (e: any) => {
+          if (e.detail === 'group') groupSelected(ctx);
+          if (e.detail === 'ungroup') ungroupSelected(ctx);
+        };
+        window.addEventListener('canvas-command', handler);
+        return () => window.removeEventListener('canvas-command', handler);
+      }, [ctx]);
+
       if (!menu.visible) return null;
 
       const { selectedIds, shapes } = ctx.state;
-      const isMulti = selectedIds.length > 1;
       const hasSelection = selectedIds.length > 0;
-      const isGroup = firstSelectionIsGroup(ctx);
+      const canGroup = Array.from(new Set(selectedIds.map(id => getTopmostParentId(shapes, id)))).length >= 2;
+      const canUngroup = selectedIds.length === 1 && shapes.find(s => s.id === selectedIds[0])?.type === 'group';
 
       return (
         <div 
@@ -189,99 +233,39 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
           <div className="text-[10px] font-bold text-zinc-500 px-3 py-2 uppercase tracking-widest flex items-center gap-2">
             <Layers className="w-3 h-3" /> {t('menu.layer')}
           </div>
-          
-          <MenuItem 
-            icon={<ChevronUp className="w-4 h-4" />} 
-            label={t('menu.bringForward')} 
-            disabled={!hasSelection} 
-            onClick={() => moveLayer(ctx, 'up')} 
-          />
-          <MenuItem 
-            icon={<ArrowUp className="w-4 h-4" />} 
-            label={t('menu.bringToFront')} 
-            disabled={!hasSelection} 
-            onClick={() => moveLayer(ctx, 'top')} 
-          />
-          <MenuItem 
-            icon={<ChevronDown className="w-4 h-4" />} 
-            label={t('menu.sendBackward')} 
-            disabled={!hasSelection} 
-            onClick={() => moveLayer(ctx, 'down')} 
-          />
-          <MenuItem 
-            icon={<ArrowDown className="w-4 h-4" />} 
-            label={t('menu.sendToBack')} 
-            disabled={!hasSelection} 
-            onClick={() => moveLayer(ctx, 'bottom')} 
-          />
-
+          <MenuItem icon={<ChevronUp className="w-4 h-4" />} label={t('menu.bringForward')} disabled={!hasSelection} onClick={() => reorder(ctx, 'forward')} />
+          <MenuItem icon={<ArrowUp className="w-4 h-4" />} label={t('menu.bringToFront')} disabled={!hasSelection} onClick={() => reorder(ctx, 'front')} />
+          <MenuItem icon={<ChevronDown className="w-4 h-4" />} label={t('menu.sendBackward')} disabled={!hasSelection} onClick={() => reorder(ctx, 'backward')} />
+          <MenuItem icon={<ArrowDown className="w-4 h-4" />} label={t('menu.sendToBack')} disabled={!hasSelection} onClick={() => reorder(ctx, 'back')} />
           <div className="h-[1px] bg-white/10 my-1 mx-2" />
-
-          {isMulti ? (
-            <MenuItem 
-              icon={<Group className="w-4 h-4" />} 
-              label={t('menu.group')} 
-              onClick={() => groupSelected(ctx)} 
-            />
-          ) : isGroup ? (
-            <MenuItem 
-              icon={<Ungroup className="w-4 h-4" />} 
-              label={t('menu.ungroup')} 
-              onClick={() => ungroupSelected(ctx)} 
-            />
+          {canUngroup ? (
+            <MenuItem icon={<Ungroup className="w-4 h-4" />} label={t('menu.ungroup')} onClick={() => ungroupSelected(ctx)} />
           ) : (
-            <MenuItem 
-              icon={<Group className="w-4 h-4" />} 
-              label={t('menu.group')} 
-              disabled={true} 
-            />
+            <MenuItem icon={<Group className="w-4 h-4" />} label={t('menu.group')} disabled={!canGroup} onClick={() => groupSelected(ctx)} />
           )}
-
           <div className="h-[1px] bg-white/10 my-1 mx-2" />
-          
-          <MenuItem 
-            icon={<Trash2 className="w-4 h-4" />} 
-            label={t('menu.delete')} 
-            danger 
-            disabled={!hasSelection}
-            onClick={() => {
-              ctx.setState(prev => ({
-                ...prev,
-                shapes: prev.shapes.filter(s => !selectedIds.includes(s.id)),
-                selectedIds: []
-              }), true);
-              closeMenu();
-            }} 
-          />
+          <MenuItem icon={<Trash2 className="w-4 h-4" />} label={t('menu.delete')} danger disabled={!hasSelection} onClick={() => {
+            const topSelectedIds = Array.from(new Set(selectedIds.map(id => getTopmostParentId(shapes, id))));
+            ctx.setState(prev => ({ ...prev, shapes: prev.shapes.filter(s => !topSelectedIds.includes(s.id)), selectedIds: [] }), true);
+            closeMenu();
+          }} />
         </div>
       );
     }
   };
 };
 
-const MenuItem: React.FC<{ 
-  icon: React.ReactNode, 
-  label: string, 
-  onClick?: () => void, 
-  disabled?: boolean,
-  danger?: boolean 
-}> = ({ icon, label, onClick, disabled, danger }) => (
+const MenuItem: React.FC<{ icon: React.ReactNode, label: string, onClick?: () => void, disabled?: boolean, danger?: boolean }> = ({ icon, label, onClick, disabled, danger }) => (
   <button 
-    disabled={disabled}
-    onClick={onClick}
-    className={`
-      w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all
-      ${disabled ? 'opacity-30 cursor-not-allowed' : 'hover:bg-white/10 active:scale-95'}
-      ${danger ? 'text-red-400 hover:bg-red-500/10' : 'text-zinc-200'}
-    `}
+    disabled={disabled} 
+    onMouseDown={(e) => e.stopPropagation()} 
+    onClick={(e) => {
+      e.stopPropagation();
+      if (!disabled && onClick) onClick();
+    }} 
+    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${disabled ? 'opacity-30 cursor-not-allowed' : 'hover:bg-white/10 active:scale-95'} ${danger ? 'text-red-400 hover:bg-red-500/10' : 'text-zinc-200'}`}
   >
     <div className="opacity-70">{icon}</div>
     <span className="flex-1 text-left">{label}</span>
   </button>
 );
-
-const firstSelectionIsGroup = (ctx: PluginContext) => {
-  if (ctx.state.selectedIds.length !== 1) return false;
-  const s = ctx.state.shapes.find(s => s.id === ctx.state.selectedIds[0]);
-  return s?.type === 'group';
-};

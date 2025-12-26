@@ -62,6 +62,28 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
     return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
   };
 
+  const collectAllSnapshots = (shapes: Shape[], selectedIds: string[]): ShapeSnapshot[] => {
+    let result: ShapeSnapshot[] = [];
+    const traverse = (list: Shape[], onlySelected: boolean) => {
+      list.forEach(s => {
+        const isSelected = selectedIds.includes(s.id);
+        if (onlySelected) {
+          if (isSelected) {
+            result.push({ id: s.id, type: s.type, x: s.x, y: s.y, width: s.width, height: s.height, rotation: s.rotation });
+            if (s.children) traverse(s.children, false);
+          } else if (s.children) {
+            traverse(s.children, true);
+          }
+        } else {
+          result.push({ id: s.id, type: s.type, x: s.x, y: s.y, width: s.width, height: s.height, rotation: s.rotation });
+          if (s.children) traverse(s.children, false);
+        }
+      });
+    };
+    traverse(shapes, true);
+    return result;
+  };
+
   const rotatePoint = (px: number, py: number, cx: number, cy: number, angle: number) => {
     const cos = Math.cos(angle), sin = Math.sin(angle);
     const dx = px - cx, dy = py - cy;
@@ -74,29 +96,33 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
   return {
     name: 'group-transform',
     onMouseDown: (e, hit, ctx) => {
-      if (ctx.state.selectedIds.length <= 1 || ctx.state.editingId) return false;
+      const isMulti = ctx.state.selectedIds.length > 1;
+      const firstShape = ctx.state.shapes.find(s => s.id === ctx.state.selectedIds[0]);
+      const isSingleGroup = ctx.state.selectedIds.length === 1 && firstShape?.type === 'group';
+
+      if ((!isMulti && !isSingleGroup) || ctx.state.editingId) return false;
+
       const { x, y } = ctx.getCanvasCoords(e.clientX, e.clientY);
       const zoom = ctx.state.zoom;
       const rect = getMultiAABB(ctx.state.shapes, ctx.state.selectedIds);
       if (!rect) return false;
 
-      const currentSnapshots = ctx.state.shapes
-        .filter(s => ctx.state.selectedIds.includes(s.id))
-        .map(s => ({ id: s.id, type: s.type, x: s.x, y: s.y, width: s.width, height: s.height, rotation: s.rotation }));
-      
-      setSnapshots(currentSnapshots);
-      setInitialRect(rect);
-      setStartMouse({ x, y });
-      setVisualRotation(0);
-      setVisualScale({ sx: 1, sy: 1 });
-
       const p = VISUAL_PADDING / zoom;
       const pivot = { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
       
+      const prepareDrag = (mode: DragMode, handle: ResizeHandle | null = null, fx: number = 0, fy: number = 0) => {
+        setSnapshots(collectAllSnapshots(ctx.state.shapes, ctx.state.selectedIds));
+        setInitialRect(rect);
+        setStartMouse({ x, y });
+        setDragMode(mode);
+        setActiveHandle(handle);
+        setFixedPoint({ x: fx, y: fy });
+        setPivotPoint(pivot);
+      };
+
       const rotPos = { x: pivot.x, y: rect.y - p - 30 / zoom };
       if (Math.hypot(x - rotPos.x, y - rotPos.y) < 12 / zoom) {
-        setPivotPoint(pivot); 
-        setDragMode('rotate'); 
+        prepareDrag('rotate');
         return true;
       }
 
@@ -112,18 +138,17 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
         else { hy = rect.y + rect.h / 2; fy = rect.y + rect.h / 2; }
 
         if (Math.hypot(x - hx, y - hy) < 12 / zoom) {
-          setDragMode('resize'); 
-          setActiveHandle(h); 
-          setFixedPoint({ x: fx, y: fy }); 
+          prepareDrag('resize', h, fx, fy);
           return true;
         }
       }
 
-      if ((hit && ctx.state.selectedIds.includes(hit.id)) || 
-          (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h)) {
-        setDragMode('move'); 
-        return false;
+      const isInsideRect = x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
+      if (isInsideRect && (hit || isSingleGroup)) {
+        prepareDrag('move');
+        return true;
       }
+
       return false;
     },
     onMouseMove: (e, ctx) => {
@@ -151,9 +176,10 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
 
         const updateShapeRecursive = (shapes: Shape[]): Shape[] => {
           return shapes.map(s => {
+            let nextS = { ...s };
             const snap = snapshots.find(sn => sn.id === s.id);
+            
             if (snap) {
-              let nextS = { ...s };
               if (dragMode === 'move') {
                 nextS.x = snap.x + dx;
                 nextS.y = snap.y + dy;
@@ -171,7 +197,6 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
                 let scaleW = Math.abs(nextSX);
                 let scaleH = Math.abs(nextSY);
                 
-                // 圆形特殊处理：保持等比例缩放
                 if (snap.type === 'circle') {
                   const uniformScale = Math.max(scaleW, scaleH);
                   scaleW = uniformScale;
@@ -183,10 +208,12 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
                 nextS.x = nextCx - nextS.width / 2;
                 nextS.y = nextCy - nextS.height / 2;
               }
-              return nextS;
             }
-            if (s.children) return { ...s, children: updateShapeRecursive(s.children) };
-            return s;
+
+            if (nextS.children) {
+              nextS.children = updateShapeRecursive(nextS.children);
+            }
+            return nextS;
           });
         };
 
@@ -196,21 +223,24 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
     onMouseUp: (e, ctx) => {
       if (dragMode) {
         ctx.setState(prev => {
-          const finalizedShapes = prev.shapes.map(s => {
-            if (prev.selectedIds.includes(s.id) && s.type === 'group') {
-              const b = getAABB(s);
-              return { 
-                ...s, 
-                x: b.x, 
-                y: b.y, 
-                width: b.w, 
-                height: b.h, 
-                rotation: 0 
-              };
-            }
-            return s;
-          });
-          return { ...prev, shapes: finalizedShapes };
+          const syncBoundsRecursive = (shapes: Shape[]): Shape[] => {
+            return shapes.map(s => {
+              let updatedS = { ...s };
+              if (s.children) {
+                updatedS.children = syncBoundsRecursive(s.children);
+                if (s.type === 'group') {
+                  const b = getAABB(updatedS);
+                  updatedS.x = b.x;
+                  updatedS.y = b.y;
+                  updatedS.width = b.w;
+                  updatedS.height = b.h;
+                  updatedS.rotation = 0;
+                }
+              }
+              return updatedS;
+            });
+          };
+          return { ...prev, shapes: syncBoundsRecursive(prev.shapes) };
         }, true);
       }
       setDragMode(null); 
@@ -220,14 +250,17 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
       setInitialRect(null);
     },
     onRenderForeground: (ctx) => {
-      if (ctx.state.selectedIds.length <= 1 || ctx.state.editingId || !ctx.renderer) return;
+      const isMulti = ctx.state.selectedIds.length > 1;
+      const firstShape = ctx.state.shapes.find(s => s.id === ctx.state.selectedIds[0]);
+      const isSingleGroup = ctx.state.selectedIds.length === 1 && firstShape?.type === 'group';
+
+      if ((!isMulti && !isSingleGroup) || ctx.state.editingId || !ctx.renderer) return;
       if (dragMode === 'move') return;
 
       const rect = (dragMode === 'rotate' || dragMode === 'resize') ? initialRect : getMultiAABB(ctx.state.shapes, ctx.state.selectedIds);
       if (!rect) return;
 
       const c = ctx.renderer.ctx, z = ctx.state.zoom, p = VISUAL_PADDING / z;
-      
       c.save();
       c.setTransform(1, 0, 0, 1, 0, 0); 
       c.translate(ctx.state.offset.x, ctx.state.offset.y); 
@@ -236,20 +269,11 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
       if (dragMode === 'rotate' || dragMode === 'resize') {
         const cx = pivotPoint.x, cy = pivotPoint.y;
         if (dragMode === 'rotate') {
-          c.translate(cx, cy); 
-          c.rotate(visualRotation); 
-          c.translate(-cx, -cy);
+          c.translate(cx, cy); c.rotate(visualRotation); c.translate(-cx, -cy);
         } else if (dragMode === 'resize') {
           const fx = fixedPoint.x, fy = fixedPoint.y;
-          c.translate(fx, fy);
-          c.scale(visualScale.sx, visualScale.sy);
-          c.translate(-fx, -fy);
+          c.translate(fx, fy); c.scale(visualScale.sx, visualScale.sy); c.translate(-fx, -fy);
         }
-      } else {
-        const cx = rect.x + rect.w / 2, cy = rect.y + rect.h / 2;
-        c.translate(cx, cy); 
-        c.rotate(visualRotation); 
-        c.translate(-cx, -cy);
       }
       
       c.strokeStyle = '#6366f1'; 
@@ -263,20 +287,13 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
         const handles: ResizeHandle[] = ['tl', 'tr', 'bl', 'br', 'tm', 'bm', 'ml', 'mr'];
         c.fillStyle = '#fff';
         const rl = { x: rect.x + rect.w / 2, y: rect.y - p - 30 / z };
-        c.beginPath(); 
-        c.moveTo(rect.x + rect.w / 2, rect.y - p); 
-        c.lineTo(rl.x, rl.y); 
-        c.stroke();
-        c.beginPath(); 
-        c.arc(rl.x, rl.y, 5 / z, 0, 7); 
-        c.fill(); 
-        c.stroke();
+        c.beginPath(); c.moveTo(rect.x + rect.w / 2, rect.y - p); c.lineTo(rl.x, rl.y); c.stroke();
+        c.beginPath(); c.arc(rl.x, rl.y, 5 / z, 0, 7); c.fill(); c.stroke();
         handles.forEach(h => {
           let hx = 0, hy = 0;
           if (h.includes('l')) hx = rect.x - p; else if (h.includes('r')) hx = rect.x + rect.w + p; else hx = rect.x + rect.w / 2;
           if (h.includes('t')) hy = rect.y - p; else if (h.includes('b')) hy = rect.y + rect.h + p; else hy = rect.y + rect.h / 2;
-          c.fillRect(hx - hs / 2, hy - hs / 2, hs, hs); 
-          c.strokeRect(hx - hs / 2, hy - hs / 2, hs, hs);
+          c.fillRect(hx - hs / 2, hy - hs / 2, hs, hs); c.strokeRect(hx - hs / 2, hy - hs / 2, hs, hs);
         });
       }
       c.restore();
