@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   CanvasPlugin, 
@@ -28,17 +29,14 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
 
   const closeMenu = useCallback(() => setMenu(prev => ({ ...prev, visible: false })), []);
 
-  // 使用延迟监听器防止菜单在开启时立即被自身的冒泡事件关闭
   useEffect(() => {
     if (menu.visible) {
       const handleGlobalClick = () => closeMenu();
-      
       const timer = setTimeout(() => {
         window.addEventListener('mousedown', handleGlobalClick);
         window.addEventListener('wheel', handleGlobalClick);
         window.addEventListener('contextmenu', handleGlobalClick);
       }, 0);
-      
       return () => {
         clearTimeout(timer);
         window.removeEventListener('mousedown', handleGlobalClick);
@@ -75,24 +73,18 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
     }));
     const xs = corners.map(p => p.x), ys = corners.map(p => p.y);
     const minX = Math.min(...xs), minY = Math.min(...ys);
-    // Fix: replaced 'YS' with 'ys' to resolve 'Cannot find name YS' error
     return { x: minX, y: minY, w: Math.max(...xs) - minX, h: Math.max(...ys) - minY };
   };
 
   const reorder = (ctx: PluginContext, type: 'front' | 'back' | 'forward' | 'backward') => {
     const { selectedIds, shapes } = ctx.state;
     if (selectedIds.length === 0) return;
-
-    // 获取所有选中元素的顶层父节点 ID
     const topSelectedIds = Array.from(new Set(selectedIds.map(id => getTopmostParentId(shapes, id))));
-    
-    // 按当前在 shapes 数组中的顺序对选中的顶层 ID 进行排序，以保持其相对层级
     const sortedSelectedTopIds = [...topSelectedIds].sort((a, b) => {
       return shapes.findIndex(s => s.id === a) - shapes.findIndex(s => s.id === b);
     });
 
     let newShapes = [...shapes];
-
     if (type === 'front') {
       const selected = newShapes.filter(s => sortedSelectedTopIds.includes(s.id));
       const rest = newShapes.filter(s => !sortedSelectedTopIds.includes(s.id));
@@ -104,14 +96,12 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
       newShapes = [...selected, ...rest];
     } 
     else if (type === 'forward') {
-      // 从上往下（数组尾部往头部）处理，避免元素互相跳跃
       for (let i = sortedSelectedTopIds.length - 1; i >= 0; i--) {
         const id = sortedSelectedTopIds[i];
         const idx = newShapes.findIndex(s => s.id === id);
         if (idx < newShapes.length - 1) {
           const targetIdx = idx + 1;
           const nextShape = newShapes[targetIdx];
-          // 如果上方的元素不在选中列表中，则交换
           if (!sortedSelectedTopIds.includes(nextShape.id)) {
             const item = newShapes.splice(idx, 1)[0];
             newShapes.splice(targetIdx, 0, item);
@@ -120,14 +110,12 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
       }
     } 
     else if (type === 'backward') {
-      // 从下往上（数组头部往尾部）处理
       for (let i = 0; i < sortedSelectedTopIds.length; i++) {
         const id = sortedSelectedTopIds[i];
         const idx = newShapes.findIndex(s => s.id === id);
         if (idx > 0) {
           const targetIdx = idx - 1;
           const prevShape = newShapes[targetIdx];
-          // 如果下方的元素不在选中列表中，则交换
           if (!sortedSelectedTopIds.includes(prevShape.id)) {
             const item = newShapes.splice(idx, 1)[0];
             newShapes.splice(targetIdx, 0, item);
@@ -135,7 +123,6 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
         }
       }
     }
-
     ctx.setState(prev => ({ ...prev, shapes: newShapes }), true);
     closeMenu();
   };
@@ -166,7 +153,8 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
       fill: 'transparent',
       stroke: 'none',
       strokeWidth: 0,
-      children: groupMembers
+      children: groupMembers,
+      isTemporary: false // 正式组合
     };
 
     ctx.setState(prev => ({
@@ -196,10 +184,8 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
   return {
     name: 'context-menu',
     onContextMenu: (e, hit, ctx) => {
-      // Access preventDefault and stopPropagation from nativeEvent and CanvasEvent respectively
       if (e.nativeEvent.preventDefault) e.nativeEvent.preventDefault();
       e.stopPropagation();
-
       if (hit && !ctx.state.selectedIds.includes(hit.id)) {
         const tid = getTopmostParentId(ctx.state.shapes, hit.id);
         ctx.setState(prev => ({ ...prev, selectedIds: [tid] }), false);
@@ -218,7 +204,6 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
       }, [ctx]);
 
       if (!menu.visible) return null;
-
       const { selectedIds, shapes } = ctx.state;
       const hasSelection = selectedIds.length > 0;
       const canGroup = Array.from(new Set(selectedIds.map(id => getTopmostParentId(shapes, id)))).length >= 2;

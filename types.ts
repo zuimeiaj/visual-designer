@@ -1,9 +1,10 @@
+
 import React from 'react';
 import { UIShape } from "./models/UIShape";
 import { Scene } from "./models/Scene";
 import { CanvasRenderer } from "./services/canvasRenderer";
 
-export type ShapeType = 'rect' | 'circle' | 'text' | 'image' | 'group' | 'line';
+export type ShapeType = 'rect' | 'circle' | 'text' | 'image' | 'group' | 'line' | 'path';
 
 export interface Shape {
   id: string;
@@ -19,7 +20,9 @@ export interface Shape {
   text?: string;
   fontSize?: number;
   src?: string;
-  children?: Shape[]; 
+  children?: Shape[];
+  points?: { x: number; y: number }[]; // 用于路径图形
+  isTemporary?: boolean; // 区分临时组合（如框选生成的）和正式组合
 }
 
 export interface CanvasState {
@@ -28,6 +31,7 @@ export interface CanvasState {
   editingId: string | null;
   zoom: number;
   offset: { x: number; y: number };
+  activeTool: ShapeType | 'select'; // 追踪当前活跃工具模式
 }
 
 export interface CanvasEvent {
@@ -62,9 +66,7 @@ export interface CanvasPlugin {
   onMouseUp?: (e: CanvasEvent, ctx: PluginContext) => void;
   onDoubleClick?: (e: CanvasEvent, hit: UIShape | null, ctx: PluginContext) => void;
   onContextMenu?: (e: CanvasEvent, hit: UIShape | null, ctx: PluginContext) => void;
-  // Updated to return boolean | void to fix "An expression of type 'void' cannot be tested for truthiness" in event handlers
   onKeyDown?: (e: KeyboardEvent, ctx: PluginContext) => boolean | void;
-  // Updated to return boolean | void for consistency and flexibility in event handling
   onWheel?: (e: CanvasEvent, ctx: PluginContext) => boolean | void;
   
   onRenderBackground?: (ctx: PluginContext) => void;

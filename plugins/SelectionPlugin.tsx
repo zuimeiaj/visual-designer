@@ -29,26 +29,16 @@ export const useSelectionPlugin = (): CanvasPlugin => {
   return {
     name: 'selection',
     onMouseDown: (e, hit, ctx) => {
-      // Access button and shiftKey from nativeEvent
-      if ((e.nativeEvent as MouseEvent).button !== 0 || ctx.state.editingId) return false;
+      if ((e.nativeEvent as MouseEvent).button !== 0 || ctx.state.editingId || ctx.state.activeTool !== 'select') return false;
       
-      // If we hit a shape, let TransformPlugin or GroupTransformPlugin handle it
       if (hit) return false;
 
-      // Clicked empty space: Deselect and start marquee
       const { x, y } = ctx.getCanvasCoords(e.clientX, e.clientY);
       if (!(e.nativeEvent as MouseEvent).shiftKey) {
         ctx.setState(prev => ({ ...prev, selectedIds: [] }), false);
       }
       setMarquee({ start: { x, y }, end: { x, y } });
       return true;
-    },
-    onDoubleClick: (e, hit, ctx) => {
-      if (hit) {
-        ctx.setState(prev => ({ ...prev, selectedIds: [hit.id] }), false);
-        return hit.type !== 'text';
-      }
-      return false;
     },
     onMouseMove: (e, ctx) => {
       if (marquee) {
@@ -66,10 +56,10 @@ export const useSelectionPlugin = (): CanvasPlugin => {
         
         const inRect = ctx.state.shapes.filter(s => {
           const b = getAABB(s);
-          return b.x >= x1 && b.y >= y1 && b.x + b.w <= x2 && b.y + b.h <= y2;
+          // Check if the shape's bounding box intersects with the marquee
+          return b.x + b.w >= x1 && b.x <= x2 && b.y + b.h >= y1 && b.y <= y2;
         }).map(s => s.id);
 
-        // Access shiftKey from nativeEvent
         ctx.setState(prev => ({ 
           ...prev, 
           selectedIds: (e.nativeEvent as MouseEvent).shiftKey ? [...new Set([...prev.selectedIds, ...inRect])] : inRect 
@@ -85,11 +75,20 @@ export const useSelectionPlugin = (): CanvasPlugin => {
       c.setTransform(1, 0, 0, 1, 0, 0);
       c.translate(offset.x, offset.y);
       c.scale(zoom, zoom);
-      c.strokeStyle = '#6366f1';
-      c.fillStyle = 'rgba(99, 102, 241, 0.1)';
+      
+      c.strokeStyle = '#818cf8';
+      c.fillStyle = 'rgba(129, 140, 248, 0.15)';
       c.lineWidth = 1 / zoom;
-      c.fillRect(marquee.start.x, marquee.start.y, marquee.end.x - marquee.start.x, marquee.end.y - marquee.start.y);
-      c.strokeRect(marquee.start.x, marquee.start.y, marquee.end.x - marquee.start.x, marquee.end.y - marquee.start.y);
+      c.setLineDash([4 / zoom, 2 / zoom]);
+      
+      const x = marquee.start.x;
+      const y = marquee.start.y;
+      const w = marquee.end.x - x;
+      const h = marquee.end.y - y;
+      
+      c.fillRect(x, y, w, h);
+      c.strokeRect(x, y, w, h);
+      
       c.restore();
     }
   };

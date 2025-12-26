@@ -2,7 +2,8 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { 
   Square, Circle as CircleIcon, Type as TypeIcon, Image as ImageIcon, Minus,
-  Sparkles, Download, Trash2, MousePointer2, ChevronRight, ChevronLeft, Zap, Languages, Undo2, Redo2
+  Sparkles, Download, Trash2, MousePointer2, ChevronRight, ChevronLeft, Zap, Languages, Undo2, Redo2,
+  PenTool
 } from 'lucide-react';
 import CanvasEditor from './components/CanvasEditor';
 import SidePanel from './components/SidePanel';
@@ -12,10 +13,10 @@ import { geminiService } from './services/geminiService';
 import { useTextEditPlugin } from './plugins/TextEditPlugin';
 import { useSelectionPlugin } from './plugins/SelectionPlugin';
 import { useTransformPlugin } from './plugins/TransformPlugin';
-import { useGroupTransformPlugin } from './plugins/GroupTransformPlugin';
 import { useRulerPlugin } from './plugins/RulerPlugin';
 import { useSmartGuidesPlugin } from './plugins/SmartGuidesPlugin';
 import { useContextMenuPlugin } from './plugins/ContextMenuPlugin';
+import { usePenPlugin } from './plugins/PenPlugin';
 import { I18nProvider, useTranslation, Language } from './lang/i18n';
 import { useHistory } from './hooks/useHistory';
 
@@ -31,21 +32,21 @@ const MainApp: React.FC = () => {
     selectedIds: [],
     editingId: null,
     zoom: 1,
-    offset: { x: 0, y: 0 }
+    offset: { x: 0, y: 0 },
+    activeTool: 'select'
   };
 
   const { state, setState, undo, redo, canUndo, canRedo } = useHistory(initialState);
   const [isAiPanelOpen, setIsAiPanelOpen] = useState(true);
-  const [activeTool, setActiveTool] = useState<ShapeType | 'select'>('select');
   const [isProcessing, setIsProcessing] = useState(false);
 
   const textPlugin = useTextEditPlugin();
   const selectionPlugin = useSelectionPlugin();
   const transformPlugin = useTransformPlugin();
-  const groupTransformPlugin = useGroupTransformPlugin();
   const rulerPlugin = useRulerPlugin();
   const smartGuidesPlugin = useSmartGuidesPlugin();
   const contextMenuPlugin = useContextMenuPlugin();
+  const penPlugin = usePenPlugin();
   
   const basePlugin = useMemo(() => ({
     name: 'core',
@@ -61,14 +62,12 @@ const MainApp: React.FC = () => {
         const mouseY = native.clientY - rect.top;
 
         ctx.setState((prev) => {
-          // 关键修复：在更新函数内部计算世界坐标，确保使用最新的 prev.zoom 和 prev.offset
           const worldX = (mouseX - prev.offset.x) / prev.zoom;
           const worldY = (mouseY - prev.offset.y) / prev.zoom;
 
           const delta = -native.deltaY * 0.002;
           const newZoom = Math.min(10, Math.max(0.1, prev.zoom * (1 + delta)));
 
-          // 根据新的缩放比例计算新的偏移，使鼠标指向的世界坐标保持不变
           const newOffsetX = mouseX - worldX * newZoom;
           const newOffsetY = mouseY - worldY * newZoom;
 
@@ -117,11 +116,11 @@ const MainApp: React.FC = () => {
     rulerPlugin, 
     contextMenuPlugin,
     textPlugin, 
-    groupTransformPlugin, 
+    penPlugin,
     transformPlugin, 
     smartGuidesPlugin,
     selectionPlugin
-  ], [basePlugin, textPlugin, groupTransformPlugin, transformPlugin, selectionPlugin, rulerPlugin, smartGuidesPlugin, contextMenuPlugin]);
+  ], [basePlugin, textPlugin, transformPlugin, selectionPlugin, rulerPlugin, smartGuidesPlugin, contextMenuPlugin, penPlugin]);
 
   const addShape = useCallback((type: ShapeType) => {
     const newShape: Shape = {
@@ -141,10 +140,14 @@ const MainApp: React.FC = () => {
     setState(prev => ({
       ...prev,
       shapes: [...prev.shapes, newShape],
-      selectedIds: [newShape.id]
+      selectedIds: [newShape.id],
+      activeTool: 'select'
     }));
-    setActiveTool('select');
   }, [state.offset, state.zoom, t, setState]);
+
+  const toggleTool = (tool: ShapeType | 'select') => {
+    setState(prev => ({ ...prev, activeTool: tool }), false);
+  };
 
   const deleteSelected = useCallback(() => {
     if (state.selectedIds.length > 0) {
@@ -197,12 +200,14 @@ const MainApp: React.FC = () => {
       <div className="flex flex-col border-r border-zinc-800 bg-zinc-900/50 backdrop-blur-md w-16 items-center py-4 gap-6 z-20">
         <div className="p-2 bg-indigo-600 rounded-lg shadow-lg shadow-indigo-500/20"><Sparkles className="w-6 h-6 text-white" /></div>
         <div className="flex flex-col gap-2">
-          <ToolButton active={activeTool === 'select'} onClick={() => setActiveTool('select')} icon={<MousePointer2 className="w-5 h-5" />} label={t('tools.select')} />
-          <ToolButton active={activeTool === 'rect'} onClick={() => addShape('rect')} icon={<Square className="w-5 h-5" />} label={t('tools.rect')} />
-          <ToolButton active={activeTool === 'circle'} onClick={() => addShape('circle')} icon={<CircleIcon className="w-5 h-5" />} label={t('tools.circle')} />
-          <ToolButton active={activeTool === 'line'} onClick={() => addShape('line')} icon={<Minus className="w-5 h-5" />} label={t('tools.line')} />
-          <ToolButton active={activeTool === 'text'} onClick={() => addShape('text')} icon={<TypeIcon className="w-5 h-5" />} label={t('tools.text')} />
-          <ToolButton active={activeTool === 'image'} onClick={() => addShape('image')} icon={<ImageIcon className="w-5 h-5" />} label={t('tools.image')} />
+          <ToolButton active={state.activeTool === 'select'} onClick={() => toggleTool('select')} icon={<MousePointer2 className="w-5 h-5" />} label={t('tools.select')} />
+          <ToolButton active={state.activeTool === 'path'} onClick={() => toggleTool('path')} icon={<PenTool className="w-5 h-5" />} label={t('tools.pen')} />
+          <div className="h-[1px] bg-zinc-800 mx-2 my-1" />
+          <ToolButton active={false} onClick={() => addShape('rect')} icon={<Square className="w-5 h-5" />} label={t('tools.rect')} />
+          <ToolButton active={false} onClick={() => addShape('circle')} icon={<CircleIcon className="w-5 h-5" />} label={t('tools.circle')} />
+          <ToolButton active={false} onClick={() => addShape('line')} icon={<Minus className="w-5 h-5" />} label={t('tools.line')} />
+          <ToolButton active={false} onClick={() => addShape('text')} icon={<TypeIcon className="w-5 h-5" />} label={t('tools.text')} />
+          <ToolButton active={false} onClick={() => addShape('image')} icon={<ImageIcon className="w-5 h-5" />} label={t('tools.image')} />
         </div>
         <div className="mt-auto flex flex-col gap-2">
           <ToolButton onClick={deleteSelected} disabled={state.selectedIds.length === 0} icon={<Trash2 className="w-5 h-5" />} label={t('tools.delete')} danger />

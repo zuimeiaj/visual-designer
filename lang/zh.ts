@@ -16,6 +16,7 @@ export const zh: TranslationKeys = {
     text: "文本",
     image: "图片",
     line: "直线",
+    pen: "钢笔工具",
     delete: "删除",
   },
   ai: {

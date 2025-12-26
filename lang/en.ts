@@ -14,6 +14,7 @@ export const en = {
     text: "Text",
     image: "Image",
     line: "Line",
+    pen: "Pen Tool",
     delete: "Delete",
   },
   ai: {
