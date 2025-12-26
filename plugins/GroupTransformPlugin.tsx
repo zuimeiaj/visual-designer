@@ -1,6 +1,6 @@
 
 import { useState } from 'react';
-import { CanvasPlugin, Shape } from '../types';
+import { CanvasPlugin, Shape, PluginContext } from '../types';
 
 type DragMode = 'move' | 'resize' | 'rotate' | null;
 type ResizeHandle = 'tl' | 'tr' | 'bl' | 'br' | 'tm' | 'bm' | 'ml' | 'mr';
@@ -96,22 +96,41 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
   return {
     name: 'group-transform',
     onMouseDown: (e, hit, ctx) => {
-      const isMulti = ctx.state.selectedIds.length > 1;
-      const firstShape = ctx.state.shapes.find(s => s.id === ctx.state.selectedIds[0]);
-      const isSingleGroup = ctx.state.selectedIds.length === 1 && firstShape?.type === 'group';
+      // Access button from nativeEvent
+      if ((e.nativeEvent as MouseEvent).button !== 0 || ctx.state.editingId) return false;
 
-      if ((!isMulti && !isSingleGroup) || ctx.state.editingId) return false;
+      const { selectedIds, shapes } = ctx.state;
+      const isHitGroup = hit?.type === 'group';
+      const isMultiSelection = selectedIds.length > 1;
+      const isSelectedGroup = selectedIds.length === 1 && shapes.find(s => s.id === selectedIds[0])?.type === 'group';
+
+      // Determine the target IDs for this interaction
+      let targetIds = [...selectedIds];
+      if (hit && !selectedIds.includes(hit.id)) {
+        if (isHitGroup) {
+          targetIds = [hit.id];
+          // Update selection immediately for visual feedback
+          ctx.setState(prev => ({ ...prev, selectedIds: [hit.id] }), false);
+        } else if (isMultiSelection) {
+           // If we click outside the current multi-selection, let standard selection handle it
+           return false;
+        }
+      }
+
+      // If we don't have a multi-selection or a group involved, defer to single transform
+      const isGroupContext = targetIds.length > 1 || (targetIds.length === 1 && shapes.find(s => s.id === targetIds[0])?.type === 'group');
+      if (!isGroupContext) return false;
 
       const { x, y } = ctx.getCanvasCoords(e.clientX, e.clientY);
       const zoom = ctx.state.zoom;
-      const rect = getMultiAABB(ctx.state.shapes, ctx.state.selectedIds);
+      const rect = getMultiAABB(shapes, targetIds);
       if (!rect) return false;
 
       const p = VISUAL_PADDING / zoom;
       const pivot = { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
       
       const prepareDrag = (mode: DragMode, handle: ResizeHandle | null = null, fx: number = 0, fy: number = 0) => {
-        setSnapshots(collectAllSnapshots(ctx.state.shapes, ctx.state.selectedIds));
+        setSnapshots(collectAllSnapshots(shapes, targetIds));
         setInitialRect(rect);
         setStartMouse({ x, y });
         setDragMode(mode);
@@ -120,12 +139,14 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
         setPivotPoint(pivot);
       };
 
+      // 1. Check Rotation Handle
       const rotPos = { x: pivot.x, y: rect.y - p - 30 / zoom };
       if (Math.hypot(x - rotPos.x, y - rotPos.y) < 12 / zoom) {
         prepareDrag('rotate');
         return true;
       }
 
+      // 2. Check Resize Handles
       const handles: ResizeHandle[] = ['tl', 'tr', 'bl', 'br', 'tm', 'bm', 'ml', 'mr'];
       for (const h of handles) {
         let hx = 0, hy = 0, fx = 0, fy = 0;
@@ -143,8 +164,9 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
         }
       }
 
+      // 3. Handle Direct Move (Hit selected shape or group rect)
       const isInsideRect = x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
-      if (isInsideRect && (hit || isSingleGroup)) {
+      if (isInsideRect && (hit || isGroupContext)) {
         prepareDrag('move');
         return true;
       }

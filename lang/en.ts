@@ -13,6 +13,7 @@ export const en = {
     circle: "Circle",
     text: "Text",
     image: "Image",
+    line: "Line",
     delete: "Delete",
   },
   ai: {

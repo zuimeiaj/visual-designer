@@ -5,11 +5,6 @@ import { useState } from 'react';
 export const useSelectionPlugin = (): CanvasPlugin => {
   const [marquee, setMarquee] = useState<{ start: { x: number, y: number }, end: { x: number, y: number } } | null>(null);
 
-  const getTopmostParentId = (shapes: Shape[], targetId: string): string => {
-    const parent = shapes.find(s => s.children?.some(c => c.id === targetId));
-    return parent ? getTopmostParentId(shapes, parent.id) : targetId;
-  };
-
   const getAABB = (s: Shape): { x: number, y: number, w: number, h: number } => {
     if (s.type === 'group' && s.children && s.children.length > 0) {
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -34,29 +29,23 @@ export const useSelectionPlugin = (): CanvasPlugin => {
   return {
     name: 'selection',
     onMouseDown: (e, hit, ctx) => {
-      if (e.button !== 0 || ctx.state.editingId) return false;
-      const { x, y } = ctx.getCanvasCoords(e.clientX, e.clientY);
+      // Access button and shiftKey from nativeEvent
+      if ((e.nativeEvent as MouseEvent).button !== 0 || ctx.state.editingId) return false;
       
-      if (hit) {
-        const targetId = getTopmostParentId(ctx.state.shapes, hit.id);
-        if (!ctx.state.selectedIds.includes(targetId)) {
-          ctx.setState(prev => ({
-            ...prev,
-            selectedIds: e.shiftKey ? [...prev.selectedIds, targetId] : [targetId]
-          }), false);
-        }
-        return false;
-      } else {
-        if (!e.shiftKey) ctx.setState(prev => ({ ...prev, selectedIds: [] }), false);
-        setMarquee({ start: { x, y }, end: { x, y } });
-        return true;
+      // If we hit a shape, let TransformPlugin or GroupTransformPlugin handle it
+      if (hit) return false;
+
+      // Clicked empty space: Deselect and start marquee
+      const { x, y } = ctx.getCanvasCoords(e.clientX, e.clientY);
+      if (!(e.nativeEvent as MouseEvent).shiftKey) {
+        ctx.setState(prev => ({ ...prev, selectedIds: [] }), false);
       }
+      setMarquee({ start: { x, y }, end: { x, y } });
+      return true;
     },
     onDoubleClick: (e, hit, ctx) => {
       if (hit) {
-        // 更新选中状态
         ctx.setState(prev => ({ ...prev, selectedIds: [hit.id] }), false);
-        // 如果是文本，返回 false 允许 TextEditPlugin 继续处理
         return hit.type !== 'text';
       }
       return false;
@@ -80,9 +69,10 @@ export const useSelectionPlugin = (): CanvasPlugin => {
           return b.x >= x1 && b.y >= y1 && b.x + b.w <= x2 && b.y + b.h <= y2;
         }).map(s => s.id);
 
+        // Access shiftKey from nativeEvent
         ctx.setState(prev => ({ 
           ...prev, 
-          selectedIds: e.shiftKey ? [...new Set([...prev.selectedIds, ...inRect])] : inRect 
+          selectedIds: (e.nativeEvent as MouseEvent).shiftKey ? [...new Set([...prev.selectedIds, ...inRect])] : inRect 
         }), true);
         setMarquee(null);
       }

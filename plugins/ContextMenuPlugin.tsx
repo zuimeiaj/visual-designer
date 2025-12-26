@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   CanvasPlugin, 
@@ -76,6 +75,7 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
     }));
     const xs = corners.map(p => p.x), ys = corners.map(p => p.y);
     const minX = Math.min(...xs), minY = Math.min(...ys);
+    // Fix: replaced 'YS' with 'ys' to resolve 'Cannot find name YS' error
     return { x: minX, y: minY, w: Math.max(...xs) - minX, h: Math.max(...ys) - minY };
   };
 
@@ -196,8 +196,8 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
   return {
     name: 'context-menu',
     onContextMenu: (e, hit, ctx) => {
-      e.preventDefault();
-      // 阻止事件冒泡到 window 触发 closeMenu
+      // Access preventDefault and stopPropagation from nativeEvent and CanvasEvent respectively
+      if (e.nativeEvent.preventDefault) e.nativeEvent.preventDefault();
       e.stopPropagation();
 
       if (hit && !ctx.state.selectedIds.includes(hit.id)) {

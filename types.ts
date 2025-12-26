@@ -1,10 +1,9 @@
-
 import React from 'react';
 import { UIShape } from "./models/UIShape";
 import { Scene } from "./models/Scene";
 import { CanvasRenderer } from "./services/canvasRenderer";
 
-export type ShapeType = 'rect' | 'circle' | 'text' | 'image' | 'group';
+export type ShapeType = 'rect' | 'circle' | 'text' | 'image' | 'group' | 'line';
 
 export interface Shape {
   id: string;
@@ -20,7 +19,7 @@ export interface Shape {
   text?: string;
   fontSize?: number;
   src?: string;
-  children?: Shape[]; // Added for grouping
+  children?: Shape[]; 
 }
 
 export interface CanvasState {
@@ -29,6 +28,17 @@ export interface CanvasState {
   editingId: string | null;
   zoom: number;
   offset: { x: number; y: number };
+}
+
+export interface CanvasEvent {
+  nativeEvent: React.MouseEvent | MouseEvent | React.WheelEvent | WheelEvent;
+  x: number;
+  y: number;
+  clientX: number;
+  clientY: number;
+  type: string;
+  stopPropagation: () => void;
+  isPropagationStopped: boolean;
 }
 
 export interface PluginContext {
@@ -47,13 +57,15 @@ export interface PluginContext {
 export interface CanvasPlugin {
   name: string;
   enabled?: boolean;
-  onMouseDown?: (e: React.MouseEvent, hit: UIShape | null, ctx: PluginContext) => boolean | void;
-  onMouseMove?: (e: React.MouseEvent, ctx: PluginContext) => void;
-  onMouseUp?: (e: React.MouseEvent, ctx: PluginContext) => void;
-  onDoubleClick?: (e: React.MouseEvent, hit: UIShape | null, ctx: PluginContext) => boolean | void;
-  onContextMenu?: (e: React.MouseEvent, hit: UIShape | null, ctx: PluginContext) => boolean | void;
+  onMouseDown?: (e: CanvasEvent, hit: UIShape | null, ctx: PluginContext) => void;
+  onMouseMove?: (e: CanvasEvent, ctx: PluginContext) => void;
+  onMouseUp?: (e: CanvasEvent, ctx: PluginContext) => void;
+  onDoubleClick?: (e: CanvasEvent, hit: UIShape | null, ctx: PluginContext) => void;
+  onContextMenu?: (e: CanvasEvent, hit: UIShape | null, ctx: PluginContext) => void;
+  // Updated to return boolean | void to fix "An expression of type 'void' cannot be tested for truthiness" in event handlers
   onKeyDown?: (e: KeyboardEvent, ctx: PluginContext) => boolean | void;
-  onWheel?: (e: React.WheelEvent, ctx: PluginContext) => boolean | void;
+  // Updated to return boolean | void for consistency and flexibility in event handling
+  onWheel?: (e: CanvasEvent, ctx: PluginContext) => boolean | void;
   
   onRenderBackground?: (ctx: PluginContext) => void;
   onRenderForeground?: (ctx: PluginContext) => void;

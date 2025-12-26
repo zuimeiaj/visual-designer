@@ -1,13 +1,13 @@
 
 import React, { useState, useCallback, useMemo } from 'react';
 import { 
-  Square, Circle as CircleIcon, Type as TypeIcon, Image as ImageIcon,
+  Square, Circle as CircleIcon, Type as TypeIcon, Image as ImageIcon, Minus,
   Sparkles, Download, Trash2, MousePointer2, ChevronRight, ChevronLeft, Zap, Languages, Undo2, Redo2
 } from 'lucide-react';
 import CanvasEditor from './components/CanvasEditor';
 import SidePanel from './components/SidePanel';
 import Toolbar from './components/Toolbar';
-import { Shape, CanvasState, ShapeType, PluginContext } from './types';
+import { Shape, CanvasState, ShapeType, PluginContext, CanvasEvent } from './types';
 import { geminiService } from './services/geminiService';
 import { useTextEditPlugin } from './plugins/TextEditPlugin';
 import { useSelectionPlugin } from './plugins/SelectionPlugin';
@@ -39,7 +39,6 @@ const MainApp: React.FC = () => {
   const [activeTool, setActiveTool] = useState<ShapeType | 'select'>('select');
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Plugins
   const textPlugin = useTextEditPlugin();
   const selectionPlugin = useSelectionPlugin();
   const transformPlugin = useTransformPlugin();
@@ -48,30 +47,42 @@ const MainApp: React.FC = () => {
   const smartGuidesPlugin = useSmartGuidesPlugin();
   const contextMenuPlugin = useContextMenuPlugin();
   
-  const basePlugin: any = useMemo(() => ({
+  const basePlugin = useMemo(() => ({
     name: 'core',
-    onWheel: (e: React.WheelEvent, ctx: PluginContext) => {
-      if (e.ctrlKey || e.metaKey) {
+    onWheel: (e: CanvasEvent, ctx: PluginContext) => {
+      const native = e.nativeEvent as WheelEvent;
+      
+      if (native.ctrlKey || native.metaKey) {
         const canvas = ctx.canvas;
         if (!canvas) return true;
+
         const rect = canvas.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
-        const worldX = (mouseX - ctx.state.offset.x) / ctx.state.zoom;
-        const worldY = (mouseY - ctx.state.offset.y) / ctx.state.zoom;
-        const delta = -e.deltaY * 0.002;
-        const newZoom = Math.min(10, Math.max(0.1, ctx.state.zoom * (1 + delta)));
-        const newOffsetX = mouseX - worldX * newZoom;
-        const newOffsetY = mouseY - worldY * newZoom;
-        ctx.setState((prev) => ({ 
-          ...prev, 
-          zoom: newZoom,
-          offset: { x: newOffsetX, y: newOffsetY }
-        }), false);
+        const mouseX = native.clientX - rect.left;
+        const mouseY = native.clientY - rect.top;
+
+        ctx.setState((prev) => {
+          // 关键修复：在更新函数内部计算世界坐标，确保使用最新的 prev.zoom 和 prev.offset
+          const worldX = (mouseX - prev.offset.x) / prev.zoom;
+          const worldY = (mouseY - prev.offset.y) / prev.zoom;
+
+          const delta = -native.deltaY * 0.002;
+          const newZoom = Math.min(10, Math.max(0.1, prev.zoom * (1 + delta)));
+
+          // 根据新的缩放比例计算新的偏移，使鼠标指向的世界坐标保持不变
+          const newOffsetX = mouseX - worldX * newZoom;
+          const newOffsetY = mouseY - worldY * newZoom;
+
+          return { 
+            ...prev, 
+            zoom: newZoom,
+            offset: { x: newOffsetX, y: newOffsetY }
+          };
+        }, false);
+        e.stopPropagation();
       } else {
         ctx.setState((prev) => ({
           ...prev,
-          offset: { x: prev.offset.x - e.deltaX, y: prev.offset.y - e.deltaY }
+          offset: { x: prev.offset.x - native.deltaX, y: prev.offset.y - native.deltaY }
         }), false);
       }
       return true;
@@ -82,13 +93,11 @@ const MainApp: React.FC = () => {
         else ctx.undo();
         return true;
       }
-      
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'g') {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent('canvas-command', { detail: e.shiftKey ? 'ungroup' : 'group' }));
         return true;
       }
-
       if (e.key === 'Delete' || e.key === 'Backspace') {
          if (ctx.state.selectedIds.length > 0 && !ctx.state.editingId) {
             ctx.setState((prev) => ({
@@ -103,16 +112,15 @@ const MainApp: React.FC = () => {
     }
   }), []);
 
-  // 排序至关重要：textPlugin 应该在 selectionPlugin 之前以正确响应双击编辑
   const plugins = useMemo(() => [
     basePlugin, 
+    rulerPlugin, 
     contextMenuPlugin,
     textPlugin, 
     groupTransformPlugin, 
-    transformPlugin,      
-    selectionPlugin,      
-    rulerPlugin,
-    smartGuidesPlugin
+    transformPlugin, 
+    smartGuidesPlugin,
+    selectionPlugin
   ], [basePlugin, textPlugin, groupTransformPlugin, transformPlugin, selectionPlugin, rulerPlugin, smartGuidesPlugin, contextMenuPlugin]);
 
   const addShape = useCallback((type: ShapeType) => {
@@ -121,11 +129,11 @@ const MainApp: React.FC = () => {
       type,
       x: (window.innerWidth / 2 - 50 - state.offset.x) / state.zoom,
       y: (window.innerHeight / 2 - 50 - state.offset.y) / state.zoom,
-      width: type === 'text' ? 200 : 100,
-      height: type === 'text' ? 40 : 100,
+      width: type === 'text' ? 200 : (type === 'line' ? 150 : 100),
+      height: type === 'text' ? 40 : (type === 'line' ? 2 : 100),
       rotation: 0,
-      fill: type === 'text' ? '#ffffff' : '#4f46e5',
-      stroke: type === 'text' ? 'none' : '#4338ca',
+      fill: type === 'text' ? '#ffffff' : (type === 'line' ? '#818cf8' : '#4f46e5'),
+      stroke: type === 'text' ? 'none' : (type === 'line' ? 'none' : '#4338ca'),
       strokeWidth: 2,
       text: type === 'text' ? t('app.doubleClickEdit') : undefined,
       fontSize: type === 'text' ? 16 : undefined
@@ -192,6 +200,7 @@ const MainApp: React.FC = () => {
           <ToolButton active={activeTool === 'select'} onClick={() => setActiveTool('select')} icon={<MousePointer2 className="w-5 h-5" />} label={t('tools.select')} />
           <ToolButton active={activeTool === 'rect'} onClick={() => addShape('rect')} icon={<Square className="w-5 h-5" />} label={t('tools.rect')} />
           <ToolButton active={activeTool === 'circle'} onClick={() => addShape('circle')} icon={<CircleIcon className="w-5 h-5" />} label={t('tools.circle')} />
+          <ToolButton active={activeTool === 'line'} onClick={() => addShape('line')} icon={<Minus className="w-5 h-5" />} label={t('tools.line')} />
           <ToolButton active={activeTool === 'text'} onClick={() => addShape('text')} icon={<TypeIcon className="w-5 h-5" />} label={t('tools.text')} />
           <ToolButton active={activeTool === 'image'} onClick={() => addShape('image')} icon={<ImageIcon className="w-5 h-5" />} label={t('tools.image')} />
         </div>
@@ -224,7 +233,7 @@ const MainApp: React.FC = () => {
              </div>
              <div className="h-4 w-[1px] bg-zinc-700"></div>
              <div className="flex items-center gap-2">
-               <span className="text-[10px] w-10 text-center font-mono">{Math.round(state.zoom * 100)}%</span>
+               <span className="text-[10px] font-mono w-10 text-center">{Math.round(state.zoom * 100)}%</span>
              </div>
              <div className="h-4 w-[1px] bg-zinc-700"></div>
              <button onClick={() => setLanguage(language === 'en' ? 'zh' : 'en')} className="flex items-center gap-2 text-[10px] font-bold text-zinc-400 hover:text-white uppercase">

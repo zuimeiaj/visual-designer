@@ -1,21 +1,22 @@
 
 import { CanvasPlugin, PluginContext, Shape } from '../types';
-import { useState } from 'react';
+import { useRef } from 'react';
 
 export const useSmartGuidesPlugin = (): CanvasPlugin => {
-  const [isDragging, setIsDragging] = useState(false);
-  
-  const COLOR_GUIDE = '#ff00ff'; // Figma Style Magenta
-  const COLOR_CONNECTOR = 'rgba(255, 0, 255, 0.7)';
-  const COLOR_TARGET_FILL = 'rgba(255, 0, 255, 0.05)';
-  const SNAP_THRESHOLD_DISPLAY = 0.5; // 画布空间下的显示阈值
+  // 使用 ref 记录当前是否正在进行有效的“移动”吸附，避免 state 频繁触发不必要的重绘
+  const isSnappingRef = useRef(false);
+
+  const COLOR_GUIDE = '#ff00ff'; 
+  const COLOR_TEXT = '#ffffff';
+  const SNAP_THRESHOLD = 5; // 吸附阈值（屏幕像素）
+  const INNER_MARGIN = 20;  // 内部边距，鼠标落在此范围内才触发对齐（避开缩放手柄）
 
   const getCorners = (s: Shape) => {
     const cx = s.x + s.width / 2, cy = s.y + s.height / 2;
     const cos = Math.cos(s.rotation), sin = Math.sin(s.rotation);
     const hw = s.width / 2, hh = s.height / 2;
     return [
-      { x: -hw, y: -hh }, { x: hw, y: -hh },
+      { x: -hw, y: -hh }, { x: hw, y: -hh }, 
       { x: hw, y: hh }, { x: -hw, y: hh }
     ].map(p => ({
       x: cx + p.x * cos - p.y * sin,
@@ -39,213 +40,176 @@ export const useSmartGuidesPlugin = (): CanvasPlugin => {
     return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
   };
 
-  const getEdges = (s: Shape) => {
-    const corners = getCorners(s);
-    return [
-      [corners[0], corners[1]],
-      [corners[1], corners[2]],
-      [corners[2], corners[3]],
-      [corners[3], corners[0]]
-    ];
-  };
-
-  const intersectLineSegment = (p1: {x:number, y:number}, p2: {x:number, y:number}, axis: 'x'|'y', val: number) => {
-    if (axis === 'x') {
-      if ((p1.x <= val && p2.x >= val) || (p1.x >= val && p2.x <= val)) {
-        if (Math.abs(p1.x - p2.x) < 0.0001) return p1.y;
-        const t = (val - p1.x) / (p2.x - p1.x);
-        return p1.y + t * (p2.y - p1.y);
-      }
-    } else {
-      if ((p1.y <= val && p2.y >= val) || (p1.y >= val && p2.y <= val)) {
-        if (Math.abs(p1.y - p2.y) < 0.0001) return p1.x;
-        const t = (val - p1.y) / (p2.y - p1.y);
-        return p1.x + t * (p2.x - p1.x);
-      }
-    }
-    return null;
+  const drawLabel = (ctx: CanvasRenderingContext2D, x: number, y: number, text: string, zoom: number) => {
+    ctx.save();
+    ctx.font = `bold ${10 / zoom}px Inter`;
+    const metrics = ctx.measureText(text);
+    const paddingH = 4 / zoom;
+    const paddingV = 2 / zoom;
+    const w = metrics.width + paddingH * 2;
+    const h = 12 / zoom + paddingV * 2;
+    ctx.fillStyle = COLOR_GUIDE;
+    ctx.beginPath();
+    ctx.roundRect(x - w / 2, y - h / 2, w, h, 2 / zoom);
+    ctx.fill();
+    ctx.fillStyle = COLOR_TEXT;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x, y);
+    ctx.restore();
   };
 
   return {
     name: 'smart-guides',
-    onMouseDown: (e) => {
-      if (e.button === 0) setIsDragging(true);
-      return false;
+    onMouseMove: (e, ctx) => {
+      const native = e.nativeEvent as MouseEvent;
+      // 必须满足：左键按下、选中且仅选中一个物体、非文字编辑状态
+      if (native.buttons !== 1 || ctx.state.selectedIds.length !== 1 || ctx.state.editingId) {
+        isSnappingRef.current = false;
+        return;
+      }
+
+      const activeId = ctx.state.selectedIds[0];
+      const activeShape = ctx.state.shapes.find(s => s.id === activeId);
+      if (!activeShape || activeShape.type === 'group') {
+        isSnappingRef.current = false;
+        return;
+      }
+
+      // 关键判定：识别是否在移动。如果鼠标位置靠近图形边缘，通常是缩放，此时不应吸附。
+      const zoom = ctx.state.zoom;
+      const m = INNER_MARGIN / zoom;
+      const isDraggingCenter = e.x > activeShape.x + m && e.x < activeShape.x + activeShape.width - m &&
+                               e.y > activeShape.y + m && e.y < activeShape.y + activeShape.height - m;
+
+      // 如果不在中心区域拖拽（可能在拖拽手柄），则不执行吸附
+      if (!isDraggingCenter) {
+        isSnappingRef.current = false;
+        return;
+      }
+
+      isSnappingRef.current = true;
+
+      ctx.setState(prev => {
+        const shape = prev.shapes.find(s => s.id === activeId);
+        if (!shape) return prev;
+
+        const aAABB = getAABB(shape);
+        const aAnchorsX = [aAABB.x, aAABB.x + aAABB.w / 2, aAABB.x + aAABB.w];
+        const aAnchorsY = [aAABB.y, aAABB.y + aAABB.h / 2, aAABB.y + aAABB.h];
+
+        let snapDX = 0;
+        let snapDY = 0;
+        let minDX = SNAP_THRESHOLD / zoom;
+        let minDY = SNAP_THRESHOLD / zoom;
+
+        prev.shapes.forEach(s => {
+          if (s.id === activeId) return;
+          const b = getAABB(s);
+          const bAnchorsX = [b.x, b.x + b.w / 2, b.x + b.w];
+          const bAnchorsY = [b.y, b.y + b.h / 2, b.y + b.h];
+
+          aAnchorsX.forEach(av => bAnchorsX.forEach(bv => {
+            const diff = Math.abs(av - bv);
+            if (diff < minDX) { minDX = diff; snapDX = bv - av; }
+          }));
+
+          aAnchorsY.forEach(av => bAnchorsY.forEach(bv => {
+            const diff = Math.abs(av - bv);
+            if (diff < minDY) { minDY = diff; snapDY = bv - av; }
+          }));
+        });
+
+        if (snapDX !== 0 || snapDY !== 0) {
+          return {
+            ...prev,
+            shapes: prev.shapes.map(s => s.id === activeId ? {
+              ...s,
+              x: s.x + snapDX,
+              y: s.y + snapDY
+            } : s)
+          };
+        }
+        return prev;
+      }, false);
     },
-    onMouseUp: () => setIsDragging(false),
+
+    onMouseUp: () => {
+      isSnappingRef.current = false;
+    },
+
     onRenderForeground: (ctx: PluginContext) => {
       const { state, renderer } = ctx;
-      if (!isDragging || state.selectedIds.length !== 1 || !renderer || state.editingId) return;
+      // 只有在满足拖拽条件且 ref 确认为正在吸附时才渲染
+      if (!isSnappingRef.current || state.selectedIds.length !== 1 || !renderer) return;
 
-      const activeShape = state.shapes.find(s => s.id === state.selectedIds[0]);
+      const activeId = state.selectedIds[0];
+      const activeShape = state.shapes.find(s => s.id === activeId);
       if (!activeShape) return;
 
       const c = renderer.ctx, { zoom, offset, shapes } = state;
       const aAABB = getAABB(activeShape);
-      const aAnchorsX = [aAABB.x, aAABB.x + aAABB.w / 2, aAABB.x + aAABB.w];
-      const aAnchorsY = [aAABB.y, aAABB.y + aAABB.h / 2, aAABB.y + aAABB.h];
-
-      const xGuides: Map<number, string[]> = new Map();
-      const yGuides: Map<number, string[]> = new Map();
-
-      shapes.forEach(s => {
-        if (s.id === activeShape.id || state.selectedIds.includes(s.id)) return;
-        const b = getAABB(s);
-        const bAnchorsX = [b.x, b.x + b.w / 2, b.x + b.w];
-        const bAnchorsY = [b.y, b.y + b.h / 2, b.y + b.h];
-
-        aAnchorsX.forEach(av => {
-          bAnchorsX.forEach(bv => {
-            if (Math.abs(av - bv) < SNAP_THRESHOLD_DISPLAY) {
-              const list = xGuides.get(bv) || [];
-              list.push(s.id);
-              xGuides.set(bv, list);
-            }
-          });
-        });
-
-        aAnchorsY.forEach(av => {
-          bAnchorsY.forEach(bv => {
-            if (Math.abs(av - bv) < SNAP_THRESHOLD_DISPLAY) {
-              const list = yGuides.get(bv) || [];
-              list.push(s.id);
-              yGuides.set(bv, list);
-            }
-          });
-        });
-      });
-
-      if (xGuides.size === 0 && yGuides.size === 0) return;
+      const aX = [aAABB.x, aAABB.x + aAABB.w / 2, aAABB.x + aAABB.w];
+      const aY = [aAABB.y, aAABB.y + aAABB.h / 2, aAABB.y + aAABB.h];
 
       c.save();
       c.setTransform(1, 0, 0, 1, 0, 0);
       c.translate(offset.x, offset.y);
       c.scale(zoom, zoom);
-      
-      const drawGuideSystem = (pos: number, targets: string[], axis: 'x' | 'y') => {
-        const allInvolved = [activeShape.id, ...targets].map(id => shapes.find(s => s.id === id)!);
-        const aabbs = allInvolved.map(getAABB);
-        const minCoord = Math.min(...aabbs.map(b => axis === 'x' ? b.y : b.x));
-        const maxCoord = Math.max(...aabbs.map(b => axis === 'x' ? b.y + b.h : b.x + b.w));
 
-        // 绘制主对齐线
-        c.beginPath();
-        c.strokeStyle = COLOR_GUIDE;
-        c.lineWidth = 1 / zoom;
-        if (axis === 'x') {
-          c.moveTo(pos, minCoord - 20 / zoom);
-          c.lineTo(pos, maxCoord + 20 / zoom);
-        } else {
-          c.moveTo(minCoord - 20 / zoom, pos);
-          c.lineTo(maxCoord + 20 / zoom, pos);
-        }
-        c.stroke();
+      shapes.forEach(s => {
+        if (s.id === activeId) return;
+        const b = getAABB(s);
+        const bX = [b.x, b.x + b.w / 2, b.x + b.w];
+        const bY = [b.y, b.y + b.h / 2, b.y + b.h];
 
-        const intervals: { min: number, max: number }[] = [];
-
-        allInvolved.forEach(s => {
-          const edges = getEdges(s);
-          const intersections: number[] = [];
-          edges.forEach(([p1, p2]) => {
-            const inter = intersectLineSegment(p1, p2, axis, pos);
-            if (inter !== null) intersections.push(inter);
-          });
-
-          if (intersections.length > 0) {
-            const minI = Math.min(...intersections);
-            const maxI = Math.max(...intersections);
-            intervals.push({ min: minI, max: maxI });
-            
-            // 绘制物体内的连接线 (实线)
-            c.beginPath();
-            c.strokeStyle = COLOR_CONNECTOR;
-            c.lineWidth = 1.5 / zoom;
-            if (axis === 'x') {
-              c.moveTo(pos, minI); c.lineTo(pos, maxI);
-            } else {
-              c.moveTo(minI, pos); c.lineTo(maxI, pos);
+        // 绘制逻辑
+        aX.forEach((av) => {
+          bX.forEach((bv) => {
+            if (Math.abs(av - bv) < 0.1) {
+              c.beginPath();
+              c.strokeStyle = COLOR_GUIDE;
+              c.lineWidth = 1 / zoom;
+              c.setLineDash([4 / zoom, 4 / zoom]);
+              const minY = Math.min(aAABB.y, b.y);
+              const maxY = Math.max(aAABB.y + aAABB.h, b.y + b.h);
+              c.moveTo(bv, minY - 10 / zoom);
+              c.lineTo(bv, maxY + 10 / zoom);
+              c.stroke();
+              c.setLineDash([]);
+              // 间距标注
+              const dy = aAABB.y + aAABB.h < b.y ? b.y - (aAABB.y + aAABB.h) : (b.y + b.h < aAABB.y ? aAABB.y - (b.y + b.h) : 0);
+              if (dy > 1) {
+                const my = aAABB.y + aAABB.h < b.y ? (aAABB.y + aAABB.h + b.y) / 2 : (b.y + b.h + aAABB.y) / 2;
+                drawLabel(c, bv, my, Math.round(dy).toString(), zoom);
+              }
             }
-            c.stroke();
-          }
-          
-          if (s.id !== activeShape.id) {
-            c.save();
-            const cx = s.x + s.width / 2, cy = s.y + s.height / 2;
-            c.translate(cx, cy); c.rotate(s.rotation); c.translate(-cx, -cy);
-            c.fillStyle = COLOR_TARGET_FILL;
-            c.fillRect(s.x, s.y, s.width, s.height);
-            c.restore();
-          }
+          });
         });
 
-        // 绘制间隔和距离标签
-        intervals.sort((a, b) => a.min - b.min);
-        for (let i = 0; i < intervals.length - 1; i++) {
-          const start = intervals[i].max;
-          const end = intervals[i+1].min;
-          const distance = end - start;
-          
-          if (distance > 2 / zoom) {
-            const mid = (start + end) / 2;
-            const distText = Math.abs(Math.round(distance)).toString();
-            
-            // 绘制虚线间隔
-            c.beginPath();
-            c.setLineDash([2, 2]);
-            c.strokeStyle = COLOR_GUIDE;
-            c.lineWidth = 1 / zoom;
-            if (axis === 'x') {
-              c.moveTo(pos, start); c.lineTo(pos, end);
-            } else {
-              c.moveTo(start, pos); c.lineTo(end, pos);
-            }
-            c.stroke();
-            c.setLineDash([]);
-
-            // 绘制背景气泡
-            c.font = `bold ${10/zoom}px Inter`;
-            const textWidth = c.measureText(distText).width;
-            const padding = 4 / zoom;
-            const labelW = textWidth + padding * 2;
-            const labelH = 14 / zoom;
-
-            c.fillStyle = COLOR_GUIDE;
-            if (axis === 'x') {
-              const lx = pos + 6 / zoom;
-              const ly = mid - labelH / 2;
+        aY.forEach((av) => {
+          bY.forEach((bv) => {
+            if (Math.abs(av - bv) < 0.1) {
               c.beginPath();
-              c.roundRect(lx, ly, labelW, labelH, 3 / zoom);
-              c.fill();
-              c.fillStyle = '#fff';
-              c.textAlign = 'center';
-              c.textBaseline = 'middle';
-              c.fillText(distText, lx + labelW / 2, mid);
-            } else {
-              const lx = mid - labelW / 2;
-              const ly = pos + 6 / zoom;
-              c.beginPath();
-              c.roundRect(lx, ly, labelW, labelH, 3 / zoom);
-              c.fill();
-              c.fillStyle = '#fff';
-              c.textAlign = 'center';
-              c.textBaseline = 'middle';
-              c.fillText(distText, mid, ly + labelH / 2);
+              c.strokeStyle = COLOR_GUIDE;
+              c.lineWidth = 1 / zoom;
+              c.setLineDash([4 / zoom, 4 / zoom]);
+              const minX = Math.min(aAABB.x, b.x);
+              const maxX = Math.max(aAABB.x + aAABB.w, b.x + b.w);
+              c.moveTo(minX - 10 / zoom, bv);
+              c.lineTo(maxX + 10 / zoom, bv);
+              c.stroke();
+              c.setLineDash([]);
+              // 间距标注
+              const dx = aAABB.x + aAABB.w < b.x ? b.x - (aAABB.x + aAABB.w) : (b.x + b.w < aAABB.x ? aAABB.x - (b.x + b.w) : 0);
+              if (dx > 1) {
+                const mx = aAABB.x + aAABB.w < b.x ? (aAABB.x + aAABB.w + b.x) / 2 : (b.x + b.w + aAABB.x) / 2;
+                drawLabel(c, mx, bv, Math.round(dx).toString(), zoom);
+              }
             }
-          }
-        }
-      };
-
-      if (xGuides.size > 0) {
-        const sortedX = Array.from(xGuides.entries()).sort((a, b) => Math.abs(a[0] - (aAABB.x + aAABB.w/2)) - Math.abs(b[0] - (aAABB.x + aAABB.w/2)));
-        const [pos, targets] = sortedX[0];
-        drawGuideSystem(pos, targets, 'x');
-      }
-
-      if (yGuides.size > 0) {
-        const sortedY = Array.from(yGuides.entries()).sort((a, b) => Math.abs(a[0] - (aAABB.y + aAABB.h/2)) - Math.abs(b[0] - (aAABB.y + aAABB.h/2)));
-        const [pos, targets] = sortedY[0];
-        drawGuideSystem(pos, targets, 'y');
-      }
+          });
+        });
+      });
 
       c.restore();
     }

@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect, useCallback, useMemo } from 'react';
-import { CanvasState, Shape, CanvasPlugin, PluginContext } from '../types';
+import { CanvasState, Shape, CanvasPlugin, PluginContext, CanvasEvent } from '../types';
 import { CanvasRenderer } from '../services/canvasRenderer';
 import { Scene } from '../models/Scene';
 
@@ -19,38 +19,19 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
   const scene = useMemo(() => new Scene(state.shapes), []);
   
   useEffect(() => {
-    // 1. 同步属性与新增形状
     state.shapes.forEach(s => {
       const existing = scene.getShapes().find(os => os.id === s.id);
-      if (existing) {
-        existing.update(s);
-      } else {
-        scene.add(s);
-      }
+      if (existing) existing.update(s);
+      else scene.add(s);
     });
-
-    // 2. 移除已删除形状
     const shapeIdsInState = new Set(state.shapes.map(s => s.id));
     const currentShapes = scene.getShapes();
     for (let i = currentShapes.length - 1; i >= 0; i--) {
-      if (!shapeIdsInState.has(currentShapes[i].id)) {
-        scene.remove(currentShapes[i].id);
-      }
+      if (!shapeIdsInState.has(currentShapes[i].id)) scene.remove(currentShapes[i].id);
     }
-
-    // 3. 严格同步层级排序
     const indexMap = new Map();
     state.shapes.forEach((s, i) => indexMap.set(s.id, i));
-    
-    scene.getShapes().sort((a, b) => {
-      const idxA = indexMap.get(a.id) ?? -1;
-      const idxB = indexMap.get(b.id) ?? -1;
-      return idxA - idxB;
-    });
-
-    // 触发内部生命周期刷新
-    (scene as any).processLifecycle?.();
-    
+    scene.getShapes().sort((a, b) => (indexMap.get(a.id) ?? -1) - (indexMap.get(b.id) ?? -1));
   }, [state.shapes, scene]);
 
   useEffect(() => {
@@ -71,9 +52,7 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
   }, [state.offset, state.zoom]);
 
   const setCursor = useCallback((cursor: string) => {
-    if (canvasRef.current) {
-      canvasRef.current.style.cursor = cursor;
-    }
+    if (canvasRef.current) canvasRef.current.style.cursor = cursor;
   }, []);
 
   const pluginCtx: PluginContext = useMemo(() => ({
@@ -82,39 +61,51 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
     undo, redo, setCursor
   }), [state, setState, updateShape, getCanvasCoords, scene, undo, redo, setCursor]);
 
-  const onMouseDown = (e: React.MouseEvent) => {
-    const { x, y } = getCanvasCoords(e.clientX, e.clientY);
-    const hit = scene.hitTest(x, y);
-    for (const p of plugins) {
-      if (p.onMouseDown?.(e, hit, pluginCtx)) break;
+  const createEvent = (e: React.MouseEvent | MouseEvent | React.WheelEvent | WheelEvent, type: string): CanvasEvent => {
+    const coords = getCanvasCoords(e.clientX, e.clientY);
+    let isStopped = false;
+    return {
+      nativeEvent: e,
+      x: coords.x,
+      y: coords.y,
+      clientX: e.clientX,
+      clientY: e.clientY,
+      type,
+      stopPropagation: () => { isStopped = true; },
+      get isPropagationStopped() { return isStopped; }
+    };
+  };
+
+  const dispatch = (type: string, nativeEvent: any, callbackName: keyof CanvasPlugin) => {
+    const ev = createEvent(nativeEvent, type);
+    // 修复 Bug: 使用不区分大小写的检查，并包含 Click 和 Context 事件
+    const lowerType = type.toLowerCase();
+    const shouldHitTest = lowerType.includes('mouse') || lowerType.includes('click') || lowerType.includes('context');
+    const hit = shouldHitTest ? scene.hitTest(ev.x, ev.y) : null;
+    
+    for (const plugin of plugins) {
+      const fn = plugin[callbackName] as any;
+      if (fn) {
+        if (type === 'onMouseDown' || type === 'onDoubleClick' || type === 'onContextMenu') {
+          fn(ev, hit, pluginCtx);
+        } else {
+          fn(ev, pluginCtx);
+        }
+        if (ev.isPropagationStopped) break;
+      }
     }
   };
 
-  const onMouseMove = (e: React.MouseEvent) => {
+  const handleMouseDown = (e: React.MouseEvent) => dispatch('onMouseDown', e, 'onMouseDown');
+  const handleMouseMove = (e: React.MouseEvent) => {
     setCursor('default');
-    plugins.forEach(p => p.onMouseMove?.(e, pluginCtx));
+    dispatch('onMouseMove', e, 'onMouseMove');
   };
-
-  const onMouseUp = (e: React.MouseEvent) => {
-    plugins.forEach(p => p.onMouseUp?.(e, pluginCtx));
-  };
-
-  const onDoubleClick = (e: React.MouseEvent) => {
-    const { x, y } = getCanvasCoords(e.clientX, e.clientY);
-    const hit = scene.hitTest(x, y);
-    for (const p of plugins) {
-      if (p.onDoubleClick?.(e, hit, pluginCtx)) break;
-    }
-  };
-
-  const onContextMenu = (e: React.MouseEvent) => {
+  const handleMouseUp = (e: React.MouseEvent) => dispatch('onMouseUp', e, 'onMouseUp');
+  const handleDoubleClick = (e: React.MouseEvent) => dispatch('onDoubleClick', e, 'onDoubleClick');
+  const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
-    e.stopPropagation(); // 关键：阻止冒泡，避免被 window 的 native contextmenu 监听器捕获
-    const { x, y } = getCanvasCoords(e.clientX, e.clientY);
-    const hit = scene.hitTest(x, y);
-    for (const p of plugins) {
-      if (p.onContextMenu?.(e, hit, pluginCtx)) break;
-    }
+    dispatch('onContextMenu', e, 'onContextMenu');
   };
 
   useEffect(() => {
@@ -131,8 +122,10 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
     const canvas = canvasRef.current;
     if (!canvas) return;
     const handleWheel = (e: WheelEvent) => {
+      const ev = createEvent(e, 'onWheel');
       for (const p of plugins) {
-        if (p.onWheel?.(e as any, pluginCtx)) {
+        const res = p.onWheel?.(ev, pluginCtx);
+        if (ev.isPropagationStopped || res === true) {
           e.preventDefault();
           break;
         }
@@ -170,11 +163,11 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
     <div className="w-full h-full relative overflow-hidden bg-[#09090b]">
       <canvas
         ref={canvasRef}
-        onMouseDown={onMouseDown}
-        onMouseMove={onMouseMove}
-        onMouseUp={onMouseUp}
-        onDoubleClick={onDoubleClick}
-        onContextMenu={onContextMenu}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onDoubleClick={handleDoubleClick}
+        onContextMenu={handleContextMenu}
         className="w-full h-full outline-none"
       />
       {plugins.map((p, i) => <React.Fragment key={p.name + i}>{p.onRenderOverlay?.(pluginCtx)}</React.Fragment>)}

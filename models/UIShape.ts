@@ -76,7 +76,11 @@ export abstract class UIShape {
     const cos = Math.cos(-this.rotation), sin = Math.sin(-this.rotation);
     const lx = dx * cos - dy * sin + cx;
     const ly = dx * sin + dy * cos + cy;
-    return lx >= this.x && lx <= this.x + this.width && ly >= this.y && ly <= this.y + this.height;
+    
+    // 给线段增加命中判定区域
+    const padding = this.type === 'line' ? 8 : 0;
+    return lx >= this.x - padding && lx <= this.x + this.width + padding && 
+           ly >= this.y - padding && ly <= this.y + this.height + padding;
   }
 
   public update(data: Partial<Shape>): void {
@@ -90,6 +94,7 @@ export abstract class UIShape {
       case 'text': return new TextShape(data);
       case 'image': return new ImageShape(data);
       case 'group': return new GroupShape(data);
+      case 'line': return new LineShape(data);
       default: return new RectShape(data);
     }
   }
@@ -104,6 +109,18 @@ export class RectShape extends UIShape {
       ctx.lineWidth = this.strokeWidth;
       ctx.strokeRect(this.x, this.y, this.width, this.height);
     }
+  }
+}
+
+export class LineShape extends UIShape {
+  public onDraw(ctx: CanvasRenderingContext2D): void {
+    ctx.beginPath();
+    ctx.moveTo(this.x, this.y + this.height / 2);
+    ctx.lineTo(this.x + this.width, this.y + this.height / 2);
+    ctx.strokeStyle = this.stroke === 'none' ? this.fill : this.stroke;
+    ctx.lineWidth = this.strokeWidth || 2;
+    ctx.lineCap = 'round';
+    ctx.stroke();
   }
 }
 
@@ -129,7 +146,6 @@ export class GroupShape extends UIShape {
   }
 
   public update(data: Partial<Shape>): void {
-    // 关键修复：防止 Object.assign 将 UIShape 实例数组替换为 plain object 数组
     const { children, ...rest } = data;
     super.update(rest);
     if (children) {
@@ -137,12 +153,9 @@ export class GroupShape extends UIShape {
     }
   }
 
-  // Implementation of abstract onDraw. Since GroupShape overrides draw to handle 
-  // children drawing directly, onDraw is left empty.
   public onDraw(ctx: CanvasRenderingContext2D, zoom: number): void {}
 
   public draw(ctx: CanvasRenderingContext2D, zoom: number): void {
-    // Group bounds are positive orthogonal, but rotation is 0. Children have their own transforms.
     this.children.forEach(child => child.draw(ctx, zoom));
   }
 
