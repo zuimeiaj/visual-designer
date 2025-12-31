@@ -6,56 +6,147 @@ export const useRulerPlugin = (): CanvasPlugin => {
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
   const RULER_SIZE = 24;
-  const COLOR_BG = '#18181b'; // zinc-900
-  const COLOR_TICK = '#3f3f46'; // zinc-700
-  const COLOR_TEXT = '#71717a'; // zinc-500
-  const COLOR_ACCENT = '#6366f1'; // indigo-500
+  const COLOR_TICK = '#f8f8f8'; 
+  const COLOR_TEXT = '#c0c0c5'; 
+  const COLOR_ACCENT = '#6366f1'; 
+  
+  // 极浅极细网格配置
+  const GRID_COLOR_PRIMARY = 'rgba(0, 0, 0, 0.035)';
+  const GRID_COLOR_MACRO = 'rgba(0, 0, 0, 0.05)';
 
   return {
     name: 'ruler',
-    onMouseMove: (e, ctx) => {
-      const coords = ctx.getCanvasCoords(e.clientX, e.clientY);
-      setMousePos(coords);
+    priority: 5,
+
+    onInteraction: (type, e) => {
+      if (type === 'mousemove') {
+        setMousePos({ x: e.x, y: e.y });
+      }
     },
+
+    onViewChange: (e, ctx) => {
+      const native = e.nativeEvent as WheelEvent;
+      
+      if (native.ctrlKey || native.metaKey) {
+        const canvas = ctx.canvas;
+        if (!canvas) return;
+
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = native.clientX - rect.left;
+        const mouseY = native.clientY - rect.top;
+
+        ctx.setState((prev) => {
+          const worldX = (mouseX - prev.offset.x) / prev.zoom;
+          const worldY = (mouseY - prev.offset.y) / prev.zoom;
+
+          const delta = -native.deltaY * 0.005;
+          const newZoom = Math.min(20, Math.max(0.05, prev.zoom * (1 + delta)));
+
+          const newOffsetX = mouseX - worldX * newZoom;
+          const newOffsetY = mouseY - worldY * newZoom;
+
+          return { 
+            ...prev, 
+            zoom: newZoom,
+            offset: { x: newOffsetX, y: newOffsetY }
+          };
+        }, false);
+        e.consume();
+      } else {
+        ctx.setState((prev) => ({
+          ...prev,
+          offset: { x: prev.offset.x - native.deltaX, y: prev.offset.y - native.deltaY }
+        }), false);
+        e.consume();
+      }
+    },
+
+    onRenderBackground: (ctx) => {
+      if (!ctx.renderer) return;
+      const c = ctx.renderer.ctx;
+      const { width, height } = c.canvas;
+      const { zoom, offset } = ctx.state;
+
+      // 1. 纯白画布
+      c.save();
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      c.fillStyle = '#ffffff';
+      c.fillRect(0, 0, width, height);
+      c.restore();
+
+      // 2. 极致纤细网格渲染
+      c.save();
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      
+      let baseStep = 10;
+      while (baseStep * zoom < 50) baseStep *= 5;
+      while (baseStep * zoom > 250) baseStep /= 5;
+
+      const drawGrid = (step: number, color: string, lineWidth: number) => {
+        c.beginPath();
+        c.strokeStyle = color;
+        c.lineWidth = lineWidth;
+
+        const startX = (offset.x % (step * zoom));
+        const startY = (offset.y % (step * zoom));
+
+        for (let x = startX; x <= width; x += step * zoom) {
+          c.moveTo(x, 0);
+          c.lineTo(x, height);
+        }
+        for (let y = startY; y <= height; y += step * zoom) {
+          c.moveTo(0, y);
+          c.lineTo(width, y);
+        }
+        c.stroke();
+      };
+
+      // 次级网格 - 极细 0.2px
+      const subStep = baseStep / 5;
+      const subStepOnScreen = subStep * zoom;
+      if (subStepOnScreen > 25) {
+        const opacity = Math.min(1, (subStepOnScreen - 25) / 40);
+        drawGrid(subStep, `rgba(0, 0, 0, ${0.015 * opacity})`, 0.2);
+      }
+
+      // 主网格 - 0.3px
+      drawGrid(baseStep, GRID_COLOR_PRIMARY, 0.3);
+      
+      // 宏观网格 - 0.5px
+      drawGrid(baseStep * 5, GRID_COLOR_MACRO, 0.5);
+
+      c.restore();
+    },
+
     onRenderForeground: (ctx) => {
       if (!ctx.renderer) return;
       const c = ctx.renderer.ctx;
       const { width, height } = c.canvas;
-      const { zoom, offset, selectedIds, shapes } = ctx.state;
+      const { zoom, offset } = ctx.state;
 
       c.save();
       c.setTransform(1, 0, 0, 1, 0, 0);
 
-      // --- Draw Backgrounds ---
-      c.fillStyle = COLOR_BG;
-      c.fillRect(0, 0, width, RULER_SIZE); // Top
-      c.fillRect(0, 0, RULER_SIZE, height); // Left
+      // 标尺背景带微妙半透明
+      c.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      c.fillRect(0, 0, width, RULER_SIZE); 
+      c.fillRect(0, 0, RULER_SIZE, height); 
       
-      // Corner square
-      c.fillStyle = '#09090b';
-      c.fillRect(0, 0, RULER_SIZE, RULER_SIZE);
-      c.strokeStyle = COLOR_TICK;
-      c.strokeRect(0, 0, RULER_SIZE, RULER_SIZE);
-
       const drawRuler = (isVertical: boolean) => {
         const length = isVertical ? height : width;
         const scroll = isVertical ? offset.y : offset.x;
         
-        // Dynamic step calculation based on zoom
-        const baseStep = 100;
-        let step = baseStep;
-        if (zoom > 2) step = 20;
-        else if (zoom > 1) step = 50;
-        else if (zoom < 0.2) step = 1000;
-        else if (zoom < 0.5) step = 500;
+        let step = 10;
+        while (step * zoom < 40) step *= 2; 
+        if (step * zoom < 60) step *= 2.5; 
 
         const startValue = Math.floor(-scroll / (zoom * step)) * step;
         const endValue = Math.ceil((length - scroll) / (zoom * step)) * step;
 
         c.beginPath();
-        c.strokeStyle = COLOR_TICK;
+        c.strokeStyle = '#f0f0f0';
         c.fillStyle = COLOR_TEXT;
-        c.font = '9px Inter';
+        c.font = '500 9px Inter';
         c.textAlign = isVertical ? 'right' : 'left';
         c.textBaseline = 'middle';
 
@@ -63,82 +154,45 @@ export const useRulerPlugin = (): CanvasPlugin => {
           const pos = v * zoom + scroll;
           if (pos < RULER_SIZE) continue;
 
-          // Major tick and Label
           if (isVertical) {
-            c.moveTo(RULER_SIZE - 8, pos);
+            c.moveTo(RULER_SIZE - 4, pos);
             c.lineTo(RULER_SIZE, pos);
             c.save();
-            c.translate(RULER_SIZE - 10, pos);
+            c.translate(RULER_SIZE - 7, pos);
             c.rotate(-Math.PI / 2);
             c.fillText(v.toString(), 0, 0);
             c.restore();
           } else {
-            c.moveTo(pos, RULER_SIZE - 8);
+            c.moveTo(pos, RULER_SIZE - 4);
             c.lineTo(pos, RULER_SIZE);
             c.fillText(v.toString(), pos + 4, RULER_SIZE / 2);
-          }
-
-          // Minor ticks
-          const minorStep = step / 5;
-          for (let m = 1; m < 5; m++) {
-            const mPos = (v + m * minorStep) * zoom + scroll;
-            if (mPos < RULER_SIZE || mPos > length) continue;
-            if (isVertical) {
-              c.moveTo(RULER_SIZE - 4, mPos);
-              c.lineTo(RULER_SIZE, mPos);
-            } else {
-              c.moveTo(mPos, RULER_SIZE - 4);
-              c.lineTo(mPos, RULER_SIZE);
-            }
           }
         }
         c.stroke();
 
-        // --- Highlight Selected Objects ---
-        if (selectedIds.length > 0) {
-          c.fillStyle = 'rgba(99, 102, 241, 0.15)';
-          selectedIds.forEach(id => {
-            const s = shapes.find(shape => shape.id === id);
-            if (!s) return;
-            // Simple AABB for ruler highlight (ignoring complex rotation for ruler simplicity)
-            const min = isVertical ? s.y : s.x;
-            const size = isVertical ? s.height : s.width;
-            const p1 = min * zoom + scroll;
-            const p2 = (min + size) * zoom + scroll;
-            
-            if (isVertical) c.fillRect(0, p1, RULER_SIZE, p2 - p1);
-            else c.fillRect(p1, 0, p2 - p1, RULER_SIZE);
-          });
-        }
-
-        // --- Mouse Pointer Indicator ---
         const mPos = (isVertical ? mousePos.y : mousePos.x) * zoom + scroll;
-        if (mPos >= RULER_SIZE) {
+        if (mPos >= RULER_SIZE && mPos <= length) {
           c.beginPath();
           c.strokeStyle = COLOR_ACCENT;
           c.lineWidth = 1;
           if (isVertical) {
-            c.moveTo(0, mPos);
-            c.lineTo(RULER_SIZE, mPos);
+            c.moveTo(RULER_SIZE - 8, mPos); c.lineTo(RULER_SIZE, mPos);
           } else {
-            c.moveTo(mPos, 0);
-            c.lineTo(mPos, RULER_SIZE);
+            c.moveTo(mPos, RULER_SIZE - 8); c.lineTo(mPos, RULER_SIZE);
           }
           c.stroke();
         }
       };
 
-      drawRuler(false); // Top
-      drawRuler(true);  // Left
+      drawRuler(false); 
+      drawRuler(true);  
 
-      // Border lines
-      c.strokeStyle = COLOR_TICK;
+      // 标尺分割线
+      c.strokeStyle = '#f2f2f2';
       c.lineWidth = 1;
       c.beginPath();
-      c.moveTo(0, RULER_SIZE);
-      c.lineTo(width, RULER_SIZE);
-      c.moveTo(RULER_SIZE, 0);
-      c.lineTo(RULER_SIZE, height);
+      c.moveTo(0, RULER_SIZE); c.lineTo(width, RULER_SIZE);
+      c.moveTo(RULER_SIZE, 0); c.lineTo(RULER_SIZE, height);
       c.stroke();
 
       c.restore();

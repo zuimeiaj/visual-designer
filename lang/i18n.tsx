@@ -17,7 +17,8 @@ interface I18nContextType {
 const I18nContext = createContext<I18nContextType | undefined>(undefined);
 
 export const I18nProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [language, setLanguage] = useState<Language>('en');
+  // 默认设置为中文
+  const [language, setLanguage] = useState<Language>('zh');
 
   const t: TFunction = useCallback((path, params) => {
     const keys = path.split('.');

@@ -1,6 +1,10 @@
 
 import React, { useRef, useEffect, useCallback, useMemo } from 'react';
-import { CanvasState, Shape, CanvasPlugin, PluginContext, CanvasEvent } from '../types';
+import { 
+  CanvasState, Shape, CanvasPlugin, PluginContext, 
+  InteractionState, TransformType, BaseEvent, SelectionEvent, 
+  TransformEvent, EditEvent, ViewEvent 
+} from '../types';
 import { CanvasRenderer } from '../services/canvasRenderer';
 import { Scene } from '../models/Scene';
 
@@ -18,6 +22,9 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
   const rendererRef = useRef<CanvasRenderer | null>(null);
   const scene = useMemo(() => new Scene(state.shapes), []);
   
+  const lastMousePos = useRef({ x: 0, y: 0 });
+  const startMousePos = useRef({ x: 0, y: 0 });
+
   useEffect(() => {
     state.shapes.forEach(s => {
       const existing = scene.getShapes().find(os => os.id === s.id);
@@ -61,84 +68,188 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
     undo, redo, setCursor
   }), [state, setState, updateShape, getCanvasCoords, scene, undo, redo, setCursor]);
 
-  const createEvent = (e: React.MouseEvent | MouseEvent | React.WheelEvent | WheelEvent, type: string): CanvasEvent => {
+  const sortedPlugins = useMemo(() => {
+    return [...plugins].sort((a, b) => (b.priority || 0) - (a.priority || 0));
+  }, [plugins]);
+
+  const createBaseEvent = (e: React.MouseEvent | MouseEvent | React.WheelEvent | WheelEvent): BaseEvent => {
     const coords = getCanvasCoords(e.clientX, e.clientY);
-    let isStopped = false;
+    let consumed = false;
     return {
-      nativeEvent: e,
       x: coords.x,
       y: coords.y,
-      clientX: e.clientX,
-      clientY: e.clientY,
-      type,
-      stopPropagation: () => { isStopped = true; },
-      get isPropagationStopped() { return isStopped; }
+      nativeEvent: e,
+      get consumed() { return consumed; },
+      consume: () => { consumed = true; }
     };
   };
 
-  const dispatch = (type: string, nativeEvent: any, callbackName: keyof CanvasPlugin) => {
-    const ev = createEvent(nativeEvent, type);
-    // 修复 Bug: 使用不区分大小写的检查，并包含 Click 和 Context 事件
-    const lowerType = type.toLowerCase();
-    const shouldHitTest = lowerType.includes('mouse') || lowerType.includes('click') || lowerType.includes('context');
-    const hit = shouldHitTest ? scene.hitTest(ev.x, ev.y) : null;
-    
-    for (const plugin of plugins) {
-      const fn = plugin[callbackName] as any;
-      if (fn) {
-        if (type === 'onMouseDown' || type === 'onDoubleClick' || type === 'onContextMenu') {
-          fn(ev, hit, pluginCtx);
-        } else {
-          fn(ev, pluginCtx);
-        }
-        if (ev.isPropagationStopped) break;
+  const dispatchTransform = (type: 'onTransformStart' | 'onTransformUpdate' | 'onTransformEnd', base: BaseEvent, transformType: TransformType, forcedTargetIds?: string[]) => {
+    const event: TransformEvent = {
+      ...base,
+      type: transformType,
+      targetIds: forcedTargetIds || state.selectedIds,
+      deltaX: base.x - lastMousePos.current.x,
+      deltaY: base.y - lastMousePos.current.y,
+      scaleX: 1,
+      scaleY: 1,
+      rotation: 0
+    };
+    for (const p of sortedPlugins) {
+      p[type]?.(event, pluginCtx);
+      if (event.consumed) break;
+    }
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    const base = createBaseEvent(e);
+    lastMousePos.current = { x: base.x, y: base.y };
+    startMousePos.current = { x: base.x, y: base.y };
+
+    const hit = scene.hitTest(base.x, base.y);
+
+    for (const p of sortedPlugins) {
+      if (p.onMouseDown?.(base, hit, pluginCtx)) return;
+      if (base.consumed) return;
+    }
+
+    if (e.button === 2) {
+      for (const p of sortedPlugins) {
+        if (p.onContextMenu?.(base, hit, pluginCtx)) break;
+        p.onInteraction?.('contextmenu', base, pluginCtx);
+        if (base.consumed) break;
+      }
+      return;
+    }
+
+    if (state.activeTool !== 'select') {
+      setState(prev => ({ ...prev, interactionState: 'DRAWING' }), false);
+      return;
+    }
+
+    if (hit) {
+      const isMulti = e.shiftKey;
+      let nextIds = [...state.selectedIds];
+      
+      if (!isMulti && !state.selectedIds.includes(hit.id)) {
+        nextIds = [hit.id];
+      } else if (isMulti) {
+        nextIds = state.selectedIds.includes(hit.id) 
+          ? state.selectedIds.filter(id => id !== hit.id)
+          : [...state.selectedIds, hit.id];
+      }
+
+      setState(prev => ({ 
+        ...prev, 
+        selectedIds: nextIds,
+        interactionState: 'TRANSFORMING',
+        activeTransformType: 'MOVE'
+      }), false);
+
+      dispatchTransform('onTransformStart', base, 'MOVE', nextIds);
+    } else {
+      if (!e.shiftKey) {
+        setState(prev => ({ 
+          ...prev, 
+          selectedIds: [],
+          interactionState: 'MARQUEE'
+        }), false);
       }
     }
   };
 
-  const handleMouseDown = (e: React.MouseEvent) => dispatch('onMouseDown', e, 'onMouseDown');
   const handleMouseMove = (e: React.MouseEvent) => {
+    const base = createBaseEvent(e);
     setCursor('default');
-    dispatch('onMouseMove', e, 'onMouseMove');
+
+    if (state.interactionState === 'TRANSFORMING') {
+      dispatchTransform('onTransformUpdate', base, state.activeTransformType || 'MOVE');
+    } else {
+      for (const p of sortedPlugins) {
+        p.onMouseMove?.(base, pluginCtx);
+        p.onInteraction?.('mousemove', base, pluginCtx);
+      }
+    }
+
+    lastMousePos.current = { x: base.x, y: base.y };
   };
-  const handleMouseUp = (e: React.MouseEvent) => dispatch('onMouseUp', e, 'onMouseUp');
-  const handleDoubleClick = (e: React.MouseEvent) => dispatch('onDoubleClick', e, 'onDoubleClick');
-  const handleContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault();
-    dispatch('onContextMenu', e, 'onContextMenu');
+
+  const handleMouseUp = (e: React.MouseEvent) => {
+    const base = createBaseEvent(e);
+    if (state.interactionState === 'TRANSFORMING') {
+      dispatchTransform('onTransformEnd', base, state.activeTransformType || 'MOVE');
+    }
+    for (const p of sortedPlugins) {
+      p.onMouseUp?.(base, pluginCtx);
+    }
+    setState(prev => ({ ...prev, interactionState: 'IDLE', activeTransformType: null }), true);
+  };
+
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    const base = createBaseEvent(e);
+    const hit = scene.hitTest(base.x, base.y);
+
+    for (const p of sortedPlugins) {
+      p.onDoubleClick?.(base, hit, pluginCtx);
+      if (base.consumed) break;
+    }
+
+    if (hit) {
+      const editEvent: EditEvent = { ...base, id: hit.id, mode: hit.type === 'text' ? 'TEXT' : 'CUSTOM' };
+      for (const p of sortedPlugins) {
+        p.onEditModeEnter?.(editEvent, pluginCtx);
+        if (editEvent.consumed) break;
+      }
+    }
   };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      for (const p of plugins) {
+      for (const p of sortedPlugins) {
         if (p.onKeyDown?.(e, pluginCtx)) break;
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [plugins, pluginCtx]);
+  }, [sortedPlugins, pluginCtx]);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
     const handleWheel = (e: WheelEvent) => {
-      const ev = createEvent(e, 'onWheel');
-      for (const p of plugins) {
-        const res = p.onWheel?.(ev, pluginCtx);
-        if (ev.isPropagationStopped || res === true) {
-          e.preventDefault();
-          break;
-        }
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      
+      // 核心修复：只有当滚轮事件直接作用于 canvas 时，才拦截并处理画布缩放
+      // 这允许覆盖在顶部的 UI 元素（如模态框）正常使用原生滚动
+      if (e.target !== canvas) return;
+
+      e.preventDefault();
+      const base = createBaseEvent(e);
+      const viewEvent: ViewEvent = { ...base, zoom: state.zoom, offset: state.offset };
+      for (const p of sortedPlugins) {
+        p.onViewChange?.(viewEvent, pluginCtx);
+        if (viewEvent.consumed) break;
       }
     };
-    canvas.addEventListener('wheel', handleWheel, { passive: false });
-    return () => canvas.removeEventListener('wheel', handleWheel);
-  }, [plugins, pluginCtx]);
+
+    const blockDefault = (e: Event) => e.preventDefault();
+
+    window.addEventListener('wheel', handleWheel, { passive: false });
+    window.addEventListener('gesturestart', blockDefault, { passive: false });
+    window.addEventListener('gesturechange', blockDefault, { passive: false });
+    window.addEventListener('gestureend', blockDefault, { passive: false });
+
+    return () => {
+      window.removeEventListener('wheel', handleWheel);
+      window.removeEventListener('gesturestart', blockDefault);
+      window.removeEventListener('gesturechange', blockDefault);
+      window.removeEventListener('gestureend', blockDefault);
+    };
+  }, [sortedPlugins, pluginCtx, state.zoom, state.offset]);
 
   const draw = useCallback(() => {
     if (!rendererRef.current) return;
-    rendererRef.current.render(state, scene, plugins, pluginCtx);
-  }, [state, scene, plugins, pluginCtx]);
+    rendererRef.current.render(state, scene, sortedPlugins, pluginCtx);
+  }, [state, scene, sortedPlugins, pluginCtx]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -160,17 +271,17 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
   }, [draw]);
 
   return (
-    <div className="w-full h-full relative overflow-hidden bg-[#09090b]">
+    <div className="w-full h-full relative overflow-hidden bg-white">
       <canvas
         ref={canvasRef}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onDoubleClick={handleDoubleClick}
-        onContextMenu={handleContextMenu}
+        onContextMenu={e => e.preventDefault()}
         className="w-full h-full outline-none"
       />
-      {plugins.map((p, i) => <React.Fragment key={p.name + i}>{p.onRenderOverlay?.(pluginCtx)}</React.Fragment>)}
+      {sortedPlugins.map((p, i) => <React.Fragment key={p.name + i}>{p.onRenderOverlay?.(pluginCtx)}</React.Fragment>)}
     </div>
   );
 };

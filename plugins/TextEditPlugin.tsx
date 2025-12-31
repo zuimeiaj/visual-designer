@@ -1,27 +1,27 @@
 
 import React from 'react';
-import { CanvasPlugin, PluginContext } from '../types';
-import { TextShape } from '../models/UIShape';
+import { CanvasPlugin, PluginContext, EditEvent } from '../types';
+import { TextShape } from '../models/TextShape';
 
 export const useTextEditPlugin = (): CanvasPlugin => {
   return {
     name: 'text-edit',
-    onDoubleClick: (e, hit, ctx) => {
-      if (ctx.state.editingId) return false;
+    priority: 100, 
 
-      if (hit && hit.type === 'text') {
-        const shape = ctx.state.shapes.find(s => s.id === hit.id);
-        if (shape) {
-          ctx.setState(prev => ({ 
-            ...prev, 
-            editingId: shape.id, 
-            selectedIds: [shape.id] 
-          }), false);
-          return true;
-        }
+    onEditModeEnter: (e, ctx) => {
+      if (ctx.state.editingId) return;
+      const shape = ctx.state.shapes.find(s => s.id === e.id);
+      if (shape && shape.type === 'text') {
+        ctx.setState(prev => ({ 
+          ...prev, 
+          editingId: shape.id, 
+          interactionState: 'EDITING',
+          selectedIds: [shape.id] 
+        }), false);
+        e.consume();
       }
-      return false;
     },
+
     onRenderOverlay: (ctx: PluginContext) => {
       const editingId = ctx.state.editingId;
       if (!editingId) return null;
@@ -30,7 +30,6 @@ export const useTextEditPlugin = (): CanvasPlugin => {
       if (!shape || shape.type !== 'text') return null;
 
       const { zoom, offset } = ctx.state;
-      
       const editorWidth = shape.width * zoom;
       const editorHeight = Math.max(shape.height * zoom, (shape.fontSize || 16) * 1.5 * zoom);
 
@@ -44,7 +43,7 @@ export const useTextEditPlugin = (): CanvasPlugin => {
         transformOrigin: '0 0',
         fontSize: (shape.fontSize || 16) * zoom,
         color: shape.fill,
-        background: 'rgba(24, 24, 27, 0.98)',
+        background: 'white',
         border: '2px solid #6366f1',
         borderRadius: '4px',
         outline: 'none',
@@ -57,12 +56,12 @@ export const useTextEditPlugin = (): CanvasPlugin => {
         fontFamily: 'Inter, sans-serif',
         lineHeight: 1.2,
         zIndex: 10000,
-        boxShadow: '0 0 0 100vw rgba(0,0,0,0.3)', // Visual focus
+        boxShadow: '0 0 0 100vw rgba(0,0,0,0.1)',
         caretColor: '#6366f1'
       };
 
       const finishEditing = () => {
-        ctx.setState(prev => ({ ...prev, editingId: null }), true);
+        ctx.setState(prev => ({ ...prev, editingId: null, interactionState: 'IDLE' }), true);
       };
 
       return (

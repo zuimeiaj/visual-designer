@@ -1,5 +1,5 @@
 
-import { Shape, ShapeType } from "../types";
+import { Shape, ShapeType, CurvePoint } from "../types";
 
 export interface TransformParams {
   x?: number;
@@ -10,6 +10,8 @@ export interface TransformParams {
   scaleX?: number;
   scaleY?: number;
 }
+
+export type UIShapeConstructor = new (data: Shape) => UIShape;
 
 export abstract class UIShape {
   public id: string;
@@ -25,6 +27,9 @@ export abstract class UIShape {
   public layer: number = 0;
   public isSelected: boolean = false;
   public points?: { x: number; y: number }[];
+  public curvePoints?: CurvePoint[];
+
+  private static registry = new Map<string, UIShapeConstructor>();
 
   constructor(data: Shape) {
     this.id = data.id;
@@ -38,6 +43,28 @@ export abstract class UIShape {
     this.stroke = data.stroke;
     this.strokeWidth = data.strokeWidth;
     this.points = data.points;
+    this.curvePoints = data.curvePoints;
+  }
+
+  /**
+   * Registers a shape class to the factory.
+   */
+  public static register(type: string, constructor: UIShapeConstructor) {
+    this.registry.set(type, constructor);
+  }
+
+  /**
+   * Dynamic factory method using the registry.
+   */
+  public static create(data: Shape): UIShape {
+    const Constructor = this.registry.get(data.type);
+    if (!Constructor) {
+      console.error(`UIShape: No constructor registered for type "${data.type}". Defaulting to Rect.`);
+      // We could return a NullShape or a default Rect if registration fails
+      const Rect = this.registry.get('rect');
+      return Rect ? new Rect(data) : (null as any);
+    }
+    return new Constructor(data);
   }
 
   public onCreated(): void {}
@@ -99,197 +126,12 @@ export abstract class UIShape {
     const lx = dx * cos - dy * sin + cx;
     const ly = dx * sin + dy * cos + cy;
     
-    const padding = (this.type === 'line' || this.type === 'path') ? 10 : 0;
+    const padding = (this.type === 'line' || this.type === 'path' || this.type === 'curve') ? 10 : 0;
     return lx >= this.x - padding && lx <= this.x + this.width + padding && 
            ly >= this.y - padding && ly <= this.y + this.height + padding;
   }
 
   public update(data: Partial<Shape>): void {
     Object.assign(this, data);
-  }
-
-  public static create(data: Shape): UIShape {
-    switch (data.type) {
-      case 'rect': return new RectShape(data);
-      case 'circle': return new CircleShape(data);
-      case 'text': return new TextShape(data);
-      case 'image': return new ImageShape(data);
-      case 'group': return new GroupShape(data);
-      case 'line': return new LineShape(data);
-      case 'path': return new PathShape(data);
-      default: return new RectShape(data);
-    }
-  }
-}
-
-export class RectShape extends UIShape {
-  public onDraw(ctx: CanvasRenderingContext2D): void {
-    ctx.fillStyle = this.fill;
-    ctx.fillRect(this.x, this.y, this.width, this.height);
-    if (this.stroke !== 'none') {
-      ctx.strokeStyle = this.stroke;
-      ctx.lineWidth = this.strokeWidth;
-      ctx.strokeRect(this.x, this.y, this.width, this.height);
-    }
-  }
-}
-
-export class LineShape extends UIShape {
-  public onDraw(ctx: CanvasRenderingContext2D): void {
-    ctx.beginPath();
-    ctx.moveTo(this.x, this.y + this.height / 2);
-    ctx.lineTo(this.x + this.width, this.y + this.height / 2);
-    ctx.strokeStyle = this.stroke === 'none' ? this.fill : this.stroke;
-    ctx.lineWidth = this.strokeWidth || 2;
-    ctx.lineCap = 'round';
-    ctx.stroke();
-  }
-}
-
-export class PathShape extends UIShape {
-  public transform(params: TransformParams): Partial<Shape> {
-    const updates = super.transform(params);
-    if (this.points && (params.scaleX !== undefined || params.scaleY !== undefined)) {
-      const sx = params.scaleX ?? (params.width !== undefined ? params.width / this.width : 1);
-      const sy = params.scaleY ?? (params.height !== undefined ? params.height / this.height : 1);
-      updates.points = this.points.map(p => ({ x: p.x * sx, y: p.y * sy }));
-    }
-    return updates;
-  }
-
-  public onDraw(ctx: CanvasRenderingContext2D): void {
-    if (!this.points || this.points.length < 2) return;
-    ctx.beginPath();
-    ctx.moveTo(this.x + this.points[0].x, this.y + this.points[0].y);
-    for (let i = 1; i < this.points.length; i++) {
-      ctx.lineTo(this.x + this.points[i].x, this.y + this.points[i].y);
-    }
-    ctx.strokeStyle = this.stroke === 'none' ? this.fill : this.stroke;
-    ctx.lineWidth = this.strokeWidth || 2;
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-    ctx.stroke();
-  }
-}
-
-export class CircleShape extends UIShape {
-  public transform(params: TransformParams): Partial<Shape> {
-    const updates = super.transform(params);
-    if (updates.width !== undefined || updates.height !== undefined) {
-      const size = Math.max(updates.width ?? this.width, updates.height ?? this.height);
-      updates.width = size; updates.height = size;
-    }
-    return updates;
-  }
-  public onDraw(ctx: CanvasRenderingContext2D): void {
-    ctx.beginPath();
-    ctx.arc(this.x + this.width / 2, this.y + this.height / 2, Math.min(this.width, this.height) / 2, 0, Math.PI * 2);
-    ctx.fillStyle = this.fill; ctx.fill();
-    if (this.stroke !== 'none') {
-      ctx.strokeStyle = this.stroke; ctx.lineWidth = this.strokeWidth; ctx.stroke();
-    }
-  }
-}
-
-export class GroupShape extends UIShape {
-  public children: UIShape[] = [];
-  constructor(data: Shape) {
-    super(data);
-    if (data.children) this.children = data.children.map(c => UIShape.create(c));
-  }
-
-  public update(data: Partial<Shape>): void {
-    const { children, ...rest } = data;
-    super.update(rest);
-    if (children) this.children = children.map(c => UIShape.create(c));
-  }
-
-  public onDraw(ctx: CanvasRenderingContext2D, zoom: number): void {
-    // Group does not draw itself content, it manages children.
-    this.children.forEach(child => child.draw(ctx, zoom));
-  }
-
-  public hitTest(px: number, py: number): boolean {
-    // Need to test hit in rotated coordinate system
-    const cx = this.x + this.width / 2;
-    const cy = this.y + this.height / 2;
-    const dx = px - cx, dy = py - cy;
-    const cos = Math.cos(-this.rotation), sin = Math.sin(-this.rotation);
-    const lx = dx * cos - dy * sin + cx;
-    const ly = dx * sin + dy * cos + cy;
-    
-    return this.children.some(child => child.hitTest(lx, ly));
-  }
-}
-
-export class TextShape extends UIShape {
-  public text: string = '';
-  public fontSize: number = 16;
-  constructor(data: Shape) {
-    super(data);
-    this.text = data.text || '';
-    this.fontSize = data.fontSize || 16;
-  }
-
-  public transform(params: TransformParams): Partial<Shape> {
-    const updates = super.transform(params);
-    if (updates.width !== undefined) {
-      updates.height = TextShape.measureHeight(this.text, updates.width, this.fontSize);
-    }
-    return updates;
-  }
-
-  public static measureHeight(text: string, width: number, fontSize: number): number {
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return fontSize * 1.2;
-    ctx.font = `${fontSize}px Inter`;
-    const paragraphs = text.split('\n');
-    let lineCount = 0;
-    paragraphs.forEach(p => {
-      if (!p) { lineCount++; return; }
-      const words = p.split(' ');
-      let line = '';
-      words.forEach(w => {
-        const test = line ? line + ' ' + w : w;
-        if (ctx.measureText(test).width > width) { lineCount++; line = w; }
-        else line = test;
-      });
-      lineCount++;
-    });
-    return lineCount * fontSize * 1.2;
-  }
-  public onDraw(ctx: CanvasRenderingContext2D): void {
-    ctx.fillStyle = this.fill;
-    ctx.font = `${this.fontSize}px Inter`;
-    ctx.textBaseline = 'top';
-    const paragraphs = this.text.split('\n');
-    const lh = this.fontSize * 1.2;
-    let currY = this.y;
-    paragraphs.forEach(p => {
-      const words = p.split(' ');
-      let line = '';
-      words.forEach(w => {
-        const test = line ? line + ' ' + w : w;
-        if (ctx.measureText(test).width > this.width) {
-          ctx.fillText(line, this.x, currY);
-          currY += lh; line = w;
-        } else line = test;
-      });
-      ctx.fillText(line, this.x, currY);
-      currY += lh;
-    });
-  }
-}
-
-export class ImageShape extends UIShape {
-  private img: HTMLImageElement | null = null;
-  constructor(data: Shape) {
-    super(data);
-    if (data.src) { this.img = new Image(); this.img.src = data.src; }
-  }
-  public onDraw(ctx: CanvasRenderingContext2D): void {
-    if (this.img?.complete) ctx.drawImage(this.img, this.x, this.y, this.width, this.height);
-    else { ctx.fillStyle = '#18181b'; ctx.fillRect(this.x, this.y, this.width, this.height); }
   }
 }

@@ -28,25 +28,25 @@ export const useSelectionPlugin = (): CanvasPlugin => {
 
   return {
     name: 'selection',
-    onMouseDown: (e, hit, ctx) => {
-      if ((e.nativeEvent as MouseEvent).button !== 0 || ctx.state.editingId || ctx.state.activeTool !== 'select') return false;
-      
-      if (hit) return false;
-
-      const { x, y } = ctx.getCanvasCoords(e.clientX, e.clientY);
-      if (!(e.nativeEvent as MouseEvent).shiftKey) {
-        ctx.setState(prev => ({ ...prev, selectedIds: [] }), false);
-      }
-      setMarquee({ start: { x, y }, end: { x, y } });
-      return true;
-    },
-    onMouseMove: (e, ctx) => {
-      if (marquee) {
-        const { x, y } = ctx.getCanvasCoords(e.clientX, e.clientY);
-        setMarquee(prev => prev ? { ...prev, end: { x, y } } : null);
+    priority: 10,
+    
+    onInteraction: (type, e, ctx) => {
+      if (type === 'mousemove' && ctx.state.interactionState === 'MARQUEE') {
+        setMarquee(prev => {
+          if (!prev) return { start: { x: e.x, y: e.y }, end: { x: e.x, y: e.y } };
+          return { ...prev, end: { x: e.x, y: e.y } };
+        });
         ctx.setCursor('crosshair');
+        e.consume();
       }
     },
+
+    onDeselectAfter: (e, ctx) => {
+      if (ctx.state.activeTool === 'select') {
+        setMarquee({ start: { x: e.x, y: e.y }, end: { x: e.x, y: e.y } });
+      }
+    },
+
     onMouseUp: (e, ctx) => {
       if (marquee) {
         const x1 = Math.min(marquee.start.x, marquee.end.x);
@@ -54,19 +54,26 @@ export const useSelectionPlugin = (): CanvasPlugin => {
         const x2 = Math.max(marquee.start.x, marquee.end.x);
         const y2 = Math.max(marquee.start.y, marquee.end.y);
         
-        const inRect = ctx.state.shapes.filter(s => {
-          const b = getAABB(s);
-          // Check if the shape's bounding box intersects with the marquee
-          return b.x + b.w >= x1 && b.x <= x2 && b.y + b.h >= y1 && b.y <= y2;
-        }).map(s => s.id);
+        // Small threshold to prevent accidental selection on single click
+        const isClick = Math.abs(x1 - x2) < 2 && Math.abs(y1 - y2) < 2;
 
-        ctx.setState(prev => ({ 
-          ...prev, 
-          selectedIds: (e.nativeEvent as MouseEvent).shiftKey ? [...new Set([...prev.selectedIds, ...inRect])] : inRect 
-        }), true);
+        if (!isClick) {
+          const inRect = ctx.state.shapes.filter(s => {
+            if (s.locked) return false;
+            const b = getAABB(s);
+            return b.x + b.w >= x1 && b.x <= x2 && b.y + b.h >= y1 && b.y <= y2;
+          }).map(s => s.id);
+
+          const isMulti = (e.nativeEvent as MouseEvent).shiftKey;
+          ctx.setState(prev => ({ 
+            ...prev, 
+            selectedIds: isMulti ? [...new Set([...prev.selectedIds, ...inRect])] : inRect 
+          }), true);
+        }
         setMarquee(null);
       }
     },
+
     onRenderForeground: (ctx) => {
       if (!marquee || !ctx.renderer) return;
       const { ctx: c } = ctx.renderer;
@@ -78,7 +85,7 @@ export const useSelectionPlugin = (): CanvasPlugin => {
       
       c.strokeStyle = '#818cf8';
       c.fillStyle = 'rgba(129, 140, 248, 0.15)';
-      c.lineWidth = 1 / zoom;
+      c.lineWidth = 1.5 / zoom;
       c.setLineDash([4 / zoom, 2 / zoom]);
       
       const x = marquee.start.x;

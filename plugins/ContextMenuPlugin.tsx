@@ -154,7 +154,7 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
       stroke: 'none',
       strokeWidth: 0,
       children: groupMembers,
-      isTemporary: false // 正式组合
+      isTemporary: false 
     };
 
     ctx.setState(prev => ({
@@ -185,12 +185,13 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
     name: 'context-menu',
     onContextMenu: (e, hit, ctx) => {
       if (e.nativeEvent.preventDefault) e.nativeEvent.preventDefault();
-      e.stopPropagation();
+      e.consume();
       if (hit && !ctx.state.selectedIds.includes(hit.id)) {
         const tid = getTopmostParentId(ctx.state.shapes, hit.id);
         ctx.setState(prev => ({ ...prev, selectedIds: [tid] }), false);
       }
-      setMenu({ x: e.clientX, y: e.clientY, visible: true });
+      const mouseEvent = e.nativeEvent as MouseEvent;
+      setMenu({ x: mouseEvent.clientX, y: mouseEvent.clientY, visible: true });
       return true;
     },
     onRenderOverlay: (ctx) => {
@@ -211,24 +212,24 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
 
       return (
         <div 
-          className="fixed glass-panel rounded-xl shadow-2xl border border-white/10 p-1 w-52 z-[9999] overflow-hidden animate-in fade-in zoom-in duration-100"
+          className="fixed bg-white border border-zinc-200 rounded-xl shadow-2xl p-1 w-52 z-[9999] overflow-hidden animate-in fade-in zoom-in duration-100"
           style={{ left: menu.x, top: menu.y }}
           onMouseDown={e => e.stopPropagation()}
         >
-          <div className="text-[10px] font-bold text-zinc-500 px-3 py-2 uppercase tracking-widest flex items-center gap-2">
+          <div className="text-[10px] font-bold text-zinc-400 px-3 py-2 uppercase tracking-widest flex items-center gap-2">
             <Layers className="w-3 h-3" /> {t('menu.layer')}
           </div>
           <MenuItem icon={<ChevronUp className="w-4 h-4" />} label={t('menu.bringForward')} disabled={!hasSelection} onClick={() => reorder(ctx, 'forward')} />
           <MenuItem icon={<ArrowUp className="w-4 h-4" />} label={t('menu.bringToFront')} disabled={!hasSelection} onClick={() => reorder(ctx, 'front')} />
           <MenuItem icon={<ChevronDown className="w-4 h-4" />} label={t('menu.sendBackward')} disabled={!hasSelection} onClick={() => reorder(ctx, 'backward')} />
           <MenuItem icon={<ArrowDown className="w-4 h-4" />} label={t('menu.sendToBack')} disabled={!hasSelection} onClick={() => reorder(ctx, 'back')} />
-          <div className="h-[1px] bg-white/10 my-1 mx-2" />
+          <div className="h-[1px] bg-zinc-100 my-1 mx-2" />
           {canUngroup ? (
             <MenuItem icon={<Ungroup className="w-4 h-4" />} label={t('menu.ungroup')} onClick={() => ungroupSelected(ctx)} />
           ) : (
             <MenuItem icon={<Group className="w-4 h-4" />} label={t('menu.group')} disabled={!canGroup} onClick={() => groupSelected(ctx)} />
           )}
-          <div className="h-[1px] bg-white/10 my-1 mx-2" />
+          <div className="h-[1px] bg-zinc-100 my-1 mx-2" />
           <MenuItem icon={<Trash2 className="w-4 h-4" />} label={t('menu.delete')} danger disabled={!hasSelection} onClick={() => {
             const topSelectedIds = Array.from(new Set(selectedIds.map(id => getTopmostParentId(shapes, id))));
             ctx.setState(prev => ({ ...prev, shapes: prev.shapes.filter(s => !topSelectedIds.includes(s.id)), selectedIds: [] }), true);
@@ -248,9 +249,9 @@ const MenuItem: React.FC<{ icon: React.ReactNode, label: string, onClick?: () =>
       e.stopPropagation();
       if (!disabled && onClick) onClick();
     }} 
-    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${disabled ? 'opacity-30 cursor-not-allowed' : 'hover:bg-white/10 active:scale-95'} ${danger ? 'text-red-400 hover:bg-red-500/10' : 'text-zinc-200'}`}
+    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${disabled ? 'opacity-30 cursor-not-allowed' : 'hover:bg-zinc-50 active:scale-95'} ${danger ? 'text-red-500 hover:bg-red-50' : 'text-zinc-700'}`}
   >
-    <div className="opacity-70">{icon}</div>
-    <span className="flex-1 text-left">{label}</span>
+    <div className="opacity-70 text-zinc-500">{icon}</div>
+    <span className="flex-1 text-left font-medium">{label}</span>
   </button>
 );

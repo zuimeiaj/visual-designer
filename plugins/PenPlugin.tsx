@@ -1,29 +1,41 @@
 
 import { useState, useCallback, useRef } from 'react';
-import { CanvasPlugin, PluginContext, Shape, ShapeType } from '../types';
+import { CanvasPlugin, PluginContext, Shape, ShapeType, CurvePoint } from '../types';
+
+type HandleType = 'anchor' | 'handleIn' | 'handleOut';
 
 export const usePenPlugin = (): CanvasPlugin => {
   // --- 路径创建状态 ---
-  const [currentPoints, setCurrentPoints] = useState<{ x: number, y: number }[]>([]);
+  const [currentCurvePoints, setCurrentCurvePoints] = useState<CurvePoint[]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
   const [mousePos, setMousePos] = useState<{ x: number, y: number } | null>(null);
+  const [isDraggingAnchor, setIsDraggingAnchor] = useState(false);
+  const [isNearStart, setIsNearStart] = useState(false);
 
   // --- 路径编辑状态 ---
-  const [draggingPointIndex, setDraggingPointIndex] = useState<number | null>(null);
+  const [draggingHandle, setDraggingHandle] = useState<{ index: number, type: HandleType } | null>(null);
 
-  // 计算 AABB 并将点转为相对坐标
-  const finalizePathData = (points: { x: number, y: number }[]) => {
-    const xs = points.map(p => p.x);
-    const ys = points.map(p => p.y);
+  const finalizeCurveData = (points: CurvePoint[], closed: boolean = false) => {
+    // Collect all coordinates including handles to calculate AABB
+    const coords: { x: number, y: number }[] = [];
+    points.forEach(p => {
+      coords.push({ x: p.x, y: p.y });
+      if (p.handleIn) coords.push({ x: p.x + p.handleIn.x, y: p.y + p.handleIn.y });
+      if (p.handleOut) coords.push({ x: p.x + p.handleOut.x, y: p.y + p.handleOut.y });
+    });
+
+    const xs = coords.map(p => p.x);
+    const ys = coords.map(p => p.y);
     const minX = Math.min(...xs);
     const minY = Math.min(...ys);
     const maxX = Math.max(...xs);
     const maxY = Math.max(...ys);
-    const width = maxX - minX;
-    const height = maxY - minY;
+    const width = maxX - minX || 1;
+    const height = maxY - minY || 1;
 
-    // 将点转换为相对于 (minX, minY) 的坐标
+    // Convert to relative coordinates
     const relativePoints = points.map(p => ({
+      ...p,
       x: p.x - minX,
       y: p.y - minY
     }));
@@ -31,139 +43,211 @@ export const usePenPlugin = (): CanvasPlugin => {
     return { x: minX, y: minY, width, height, relativePoints };
   };
 
-  const finishPathCreation = useCallback((ctx: PluginContext) => {
-    if (currentPoints.length < 2) {
-      setCurrentPoints([]);
+  const finishCurveCreation = useCallback((ctx: PluginContext, closed: boolean = false) => {
+    if (currentCurvePoints.length < 2) {
+      setCurrentCurvePoints([]);
       setIsDrawing(false);
       return;
     }
 
-    const { x, y, width, height, relativePoints } = finalizePathData(currentPoints);
+    const { x, y, width, height, relativePoints } = finalizeCurveData(currentCurvePoints, closed);
 
-    const newPath: Shape = {
-      id: 'path-' + Math.random().toString(36).substr(2, 9),
-      type: 'path' as ShapeType,
+    const newCurve: Shape = {
+      id: 'curve-' + Math.random().toString(36).substr(2, 9),
+      type: 'curve' as ShapeType,
       x,
       y,
       width,
       height,
       rotation: 0,
-      fill: 'transparent',
+      fill: closed ? '#818cf822' : 'transparent',
       stroke: '#818cf8',
       strokeWidth: 2,
-      points: relativePoints
+      curvePoints: relativePoints,
+      closed
     };
 
     ctx.setState(prev => ({
       ...prev,
-      shapes: [...prev.shapes, newPath],
-      selectedIds: [newPath.id]
+      shapes: [...prev.shapes, newCurve],
+      selectedIds: [newCurve.id],
+      activeTool: 'select'
     }), true);
 
-    setCurrentPoints([]);
+    setCurrentCurvePoints([]);
     setIsDrawing(false);
-  }, [currentPoints]);
+    setIsNearStart(false);
+  }, [currentCurvePoints]);
 
   return {
     name: 'pen-plugin',
 
     onMouseDown: (e, hit, ctx) => {
-      const { x, y } = ctx.getCanvasCoords(e.clientX, e.clientY);
+      const { x, y } = e;
       const zoom = ctx.state.zoom;
 
-      // --- 场景 1: 正在编辑已有路径的点 ---
+      // --- Scene 1: Editing Existing Path Points ---
       if (ctx.state.editingId) {
         const shape = ctx.state.shapes.find(s => s.id === ctx.state.editingId);
-        if (shape && shape.type === 'path' && shape.points) {
-          const handleSize = 10 / zoom;
-          const hitIdx = shape.points.findIndex(p => {
-            // 注意：编辑时点是相对坐标，需要加上 shape.x, shape.y
-            // 这里暂不考虑旋转，路径编辑通常在 0 旋转下效果最好
-            return Math.abs(x - (shape.x + p.x)) < handleSize && Math.abs(y - (shape.y + p.y)) < handleSize;
-          });
-
-          if (hitIdx !== -1) {
-            setDraggingPointIndex(hitIdx);
-            e.stopPropagation();
-            return;
+        if (shape && shape.type === 'curve' && shape.curvePoints) {
+          const threshold = 12 / zoom;
+          for (let i = 0; i < shape.curvePoints.length; i++) {
+            const p = shape.curvePoints[i];
+            const ax = shape.x + p.x;
+            const ay = shape.y + p.y;
+            
+            if (Math.hypot(x - ax, y - ay) < threshold) {
+              setDraggingHandle({ index: i, type: 'anchor' });
+              e.consume();
+              return;
+            }
+            if (p.handleOut) {
+              const hox = ax + p.handleOut.x;
+              const hoy = ay + p.handleOut.y;
+              if (Math.hypot(x - hox, y - hoy) < threshold) {
+                setDraggingHandle({ index: i, type: 'handleOut' });
+                e.consume();
+                return;
+              }
+            }
+            if (p.handleIn) {
+              const hix = ax + p.handleIn.x;
+              const hiy = ay + p.handleIn.y;
+              if (Math.hypot(x - hix, y - hiy) < threshold) {
+                setDraggingHandle({ index: i, type: 'handleIn' });
+                e.consume();
+                return;
+              }
+            }
           }
         }
       }
 
-      // --- 场景 2: 正在创建新路径 ---
-      if (ctx.state.activeTool === 'path') {
-        if (!hit) {
-          setCurrentPoints(prev => [...prev, { x, y }]);
-          setIsDrawing(true);
-          e.stopPropagation();
+      // --- Scene 2: Creating New Path ---
+      if (ctx.state.activeTool === 'curve' || ctx.state.activeTool === 'path') {
+        // Check for closing path
+        if (currentCurvePoints.length > 2) {
+          const start = currentCurvePoints[0];
+          const threshold = 12 / zoom;
+          if (Math.hypot(x - start.x, y - start.y) < threshold) {
+            finishCurveCreation(ctx, true);
+            e.consume();
+            return;
+          }
         }
+
+        const newPoint: CurvePoint = { x, y };
+        setCurrentCurvePoints(prev => [...prev, newPoint]);
+        setIsDrawing(true);
+        setIsDraggingAnchor(true);
+        e.consume();
       }
     },
 
     onMouseMove: (e, ctx) => {
-      const { x, y } = ctx.getCanvasCoords(e.clientX, e.clientY);
+      const { x, y } = e;
+      const zoom = ctx.state.zoom;
 
-      // --- 处理点拖拽编辑 ---
-      if (draggingPointIndex !== null && ctx.state.editingId) {
+      // --- Handle Point/Handle Dragging while Editing ---
+      if (draggingHandle && ctx.state.editingId) {
         ctx.setState(prev => {
           const shapes = prev.shapes.map(s => {
-            if (s.id !== prev.editingId || !s.points) return s;
+            if (s.id !== prev.editingId || !s.curvePoints) return s;
+            const newPoints = [...s.curvePoints];
+            const p = { ...newPoints[draggingHandle.index] };
+
+            if (draggingHandle.type === 'anchor') {
+              const dx = x - (s.x + p.x);
+              const dy = y - (s.y + p.y);
+              p.x += dx;
+              p.y += dy;
+            } else if (draggingHandle.type === 'handleOut') {
+              p.handleOut = { x: x - (s.x + p.x), y: y - (s.y + p.y) };
+              p.handleIn = { x: -p.handleOut.x, y: -p.handleOut.y };
+            } else if (draggingHandle.type === 'handleIn') {
+              p.handleIn = { x: x - (s.x + p.x), y: y - (s.y + p.y) };
+              p.handleOut = { x: -p.handleIn.x, y: -p.handleIn.y };
+            }
+
+            newPoints[draggingHandle.index] = p;
             
-            // 1. 更新被拖拽的点（转回相对坐标）
-            const newPoints = [...s.points];
-            newPoints[draggingPointIndex] = { x: x - s.x, y: y - s.y };
+            const absPoints = newPoints.map(pt => ({
+              ...pt,
+              x: pt.x + s.x,
+              y: pt.y + s.y
+            }));
+            const { x: nx, y: ny, width: nw, height: nh, relativePoints: nrp } = finalizeCurveData(absPoints, s.closed);
 
-            // 2. 重新计算整体包围盒以适配 UI 框架
-            // 先转回绝对坐标
-            const absPoints = newPoints.map(p => ({ x: p.x + s.x, y: p.y + s.y }));
-            const { x: nx, y: ny, width: nw, height: nh, relativePoints: nrp } = finalizePathData(absPoints);
-
-            return { ...s, x: nx, y: ny, width: nw, height: nh, points: nrp };
+            return { ...s, x: nx, y: ny, width: nw, height: nh, curvePoints: nrp };
           });
           return { ...prev, shapes };
         }, false);
         return;
       }
 
-      // --- 处理新路径预览 ---
-      if (ctx.state.activeTool === 'path' && isDrawing) {
+      // --- Handle Handle Creation during New Path Placement ---
+      if (isDraggingAnchor && isDrawing) {
+        setCurrentCurvePoints(prev => {
+          if (prev.length === 0) return prev;
+          const lastIdx = prev.length - 1;
+          const newPoints = [...prev];
+          const last = { ...newPoints[lastIdx] };
+          
+          const hox = x - last.x;
+          const hoy = y - last.y;
+          last.handleOut = { x: hox, y: hoy };
+          last.handleIn = { x: -hox, y: -hoy };
+          
+          newPoints[lastIdx] = last;
+          return newPoints;
+        });
+      }
+
+      // --- Handle New Path Cursor Preview & Start Point Snapping ---
+      if ((ctx.state.activeTool === 'curve' || ctx.state.activeTool === 'path') && isDrawing) {
         setMousePos({ x, y });
         ctx.setCursor('crosshair');
+
+        if (currentCurvePoints.length > 2) {
+          const start = currentCurvePoints[0];
+          const threshold = 12 / zoom;
+          setIsNearStart(Math.hypot(x - start.x, y - start.y) < threshold);
+        } else {
+          setIsNearStart(false);
+        }
       }
     },
 
     onMouseUp: () => {
-      setDraggingPointIndex(null);
+      setDraggingHandle(null);
+      setIsDraggingAnchor(false);
     },
 
     onDoubleClick: (e, hit, ctx) => {
-      // 如果活跃工具是路径，双击完成创建
-      if (ctx.state.activeTool === 'path' && isDrawing) {
-        finishPathCreation(ctx);
-        e.stopPropagation();
+      if ((ctx.state.activeTool === 'curve' || ctx.state.activeTool === 'path') && isDrawing) {
+        finishCurveCreation(ctx, isNearStart);
+        e.consume();
         return;
       }
 
-      // 如果活跃工具是选择，双击路径进入编辑模式
-      if (ctx.state.activeTool === 'select' && hit && hit.type === 'path') {
+      if (ctx.state.activeTool === 'select' && hit && hit.type === 'curve') {
         ctx.setState(prev => ({
           ...prev,
           editingId: hit.id,
           selectedIds: [hit.id]
         }), false);
-        e.stopPropagation();
+        e.consume();
       }
     },
 
     onKeyDown: (e, ctx) => {
-      // 退出编辑模式
       if (e.key === 'Escape' || e.key === 'Enter') {
         if (ctx.state.editingId) {
           ctx.setState(prev => ({ ...prev, editingId: null }), true);
           return true;
         }
         if (isDrawing) {
-          finishPathCreation(ctx);
+          finishCurveCreation(ctx);
           return true;
         }
       }
@@ -180,45 +264,100 @@ export const usePenPlugin = (): CanvasPlugin => {
       c.translate(offset.x, offset.y);
       c.scale(zoom, zoom);
 
-      // --- 绘制正在创建的路径预览 ---
-      if (activeTool === 'path' && isDrawing && currentPoints.length > 0) {
+      // --- Draw Live Preview while Creating ---
+      if ((activeTool === 'curve' || activeTool === 'path') && isDrawing && currentCurvePoints.length > 0) {
         c.beginPath();
         c.lineWidth = 2 / zoom;
         c.strokeStyle = '#818cf8';
         c.setLineDash([5 / zoom, 5 / zoom]);
-        c.moveTo(currentPoints[0].x, currentPoints[0].y);
-        for (let i = 1; i < currentPoints.length; i++) {
-          c.lineTo(currentPoints[i].x, currentPoints[i].y);
+        
+        const start = currentCurvePoints[0];
+        c.moveTo(start.x, start.y);
+        
+        for (let i = 1; i < currentCurvePoints.length; i++) {
+          const p = currentCurvePoints[i];
+          const prev = currentCurvePoints[i-1];
+          const cp1 = prev.handleOut ? { x: prev.x + prev.handleOut.x, y: prev.y + prev.handleOut.y } : { x: prev.x, y: prev.y };
+          const cp2 = p.handleIn ? { x: p.x + p.handleIn.x, y: p.y + p.handleIn.y } : { x: p.x, y: p.y };
+          c.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, p.x, p.y);
         }
-        if (mousePos) c.lineTo(mousePos.x, mousePos.y);
+        
+        if (mousePos) {
+          const last = currentCurvePoints[currentCurvePoints.length - 1];
+          const targetX = isNearStart ? start.x : mousePos.x;
+          const targetY = isNearStart ? start.y : mousePos.y;
+
+          const cp1 = last.handleOut ? { x: last.x + last.handleOut.x, y: last.y + last.handleOut.y } : { x: last.x, y: last.y };
+          const cp2 = isNearStart && start.handleIn ? { x: start.x + start.handleIn.x, y: start.y + start.handleIn.y } : { x: targetX, y: targetY };
+          
+          c.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, targetX, targetY);
+        }
+        
         c.stroke();
         c.setLineDash([]);
 
-        // 绘制锚点
+        // Draw Anchors and Control Handles
         const dotSize = 4 / zoom;
-        c.fillStyle = '#ffffff';
-        currentPoints.forEach(p => {
+        currentCurvePoints.forEach((p, idx) => {
+          const isFirst = idx === 0;
+          c.fillStyle = (isFirst && isNearStart) ? '#818cf8' : '#ffffff';
+          c.strokeStyle = '#818cf8';
           c.beginPath();
-          c.arc(p.x, p.y, dotSize, 0, Math.PI * 2);
+          c.arc(p.x, p.y, isFirst && isNearStart ? dotSize * 1.5 : dotSize, 0, Math.PI * 2);
           c.fill();
           c.stroke();
+          
+          if (p.handleOut) {
+            c.beginPath();
+            c.moveTo(p.x, p.y);
+            c.lineTo(p.x + p.handleOut.x, p.y + p.handleOut.y);
+            c.stroke();
+            c.fillRect(p.x + p.handleOut.x - dotSize/2, p.y + p.handleOut.y - dotSize/2, dotSize, dotSize);
+          }
+          if (p.handleIn) {
+            c.beginPath();
+            c.moveTo(p.x, p.y);
+            c.lineTo(p.x + p.handleIn.x, p.y + p.handleIn.y);
+            c.stroke();
+            c.fillRect(p.x + p.handleIn.x - dotSize/2, p.y + p.handleIn.y - dotSize/2, dotSize, dotSize);
+          }
         });
       }
 
-      // --- 绘制正在编辑的路径点手柄 ---
+      // --- Draw Handles when Editing ---
       if (editingId) {
         const shape = shapes.find(s => s.id === editingId);
-        if (shape && shape.type === 'path' && shape.points) {
-          const handleSize = 6 / zoom;
-          c.fillStyle = '#ffffff';
-          c.strokeStyle = '#6366f1';
+        if (shape && shape.type === 'curve' && shape.curvePoints) {
+          const dotSize = 5 / zoom;
           c.lineWidth = 1.5 / zoom;
           
-          shape.points.forEach((p, idx) => {
-            const px = shape.x + p.x;
-            const py = shape.y + p.y;
-            c.fillRect(px - handleSize / 2, py - handleSize / 2, handleSize, handleSize);
-            c.strokeRect(px - handleSize / 2, py - handleSize / 2, handleSize, handleSize);
+          shape.curvePoints.forEach((p, idx) => {
+            const ax = shape.x + p.x;
+            const ay = shape.y + p.y;
+            
+            c.strokeStyle = '#6366f1';
+            if (p.handleOut) {
+              const hox = ax + p.handleOut.x;
+              const hoy = ay + p.handleOut.y;
+              c.beginPath(); c.moveTo(ax, ay); c.lineTo(hox, hoy); c.stroke();
+              c.fillStyle = '#ffffff';
+              c.fillRect(hox - dotSize/2, hoy - dotSize/2, dotSize, dotSize);
+              c.strokeRect(hox - dotSize/2, hoy - dotSize/2, dotSize, dotSize);
+            }
+            if (p.handleIn) {
+              const hix = ax + p.handleIn.x;
+              const hiy = ay + p.handleIn.y;
+              c.beginPath(); c.moveTo(ax, ay); c.lineTo(hix, hiy); c.stroke();
+              c.fillStyle = '#ffffff';
+              c.fillRect(hix - dotSize/2, hiy - dotSize/2, dotSize, dotSize);
+              c.strokeRect(hix - dotSize/2, hiy - dotSize/2, dotSize, dotSize);
+            }
+
+            c.fillStyle = '#ffffff';
+            c.beginPath();
+            c.arc(ax, ay, dotSize, 0, Math.PI * 2);
+            c.fill();
+            c.stroke();
           });
         }
       }

@@ -103,7 +103,8 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
 
       if (!isMultiSelection && !isSelectedGroup) return false;
 
-      const { x, y } = ctx.getCanvasCoords(e.clientX, e.clientY);
+      // Fix: Use e.x and e.y directly as they are already canvas coordinates
+      const { x, y } = e;
       const zoom = ctx.state.zoom;
       const rect = getMultiAABB(shapes, selectedIds);
       if (!rect) return false;
@@ -126,7 +127,8 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
       const rotPos = { x: pivot.x, y: rect.y - p - 30 / zoom };
       if (Math.hypot(x - rotPos.x, y - rotPos.y) < 15 / zoom) {
         prepareDrag('rotate');
-        e.stopPropagation();
+        // Fix: Use e.consume() instead of stopPropagation()
+        e.consume();
         return true;
       }
 
@@ -144,7 +146,8 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
 
         if (Math.hypot(x - hx, y - hy) < 15 / zoom) {
           prepareDrag('resize', h, fx, fy);
-          e.stopPropagation();
+          // Fix: Use e.consume() instead of stopPropagation()
+          e.consume();
           return true;
         }
       }
@@ -152,14 +155,16 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
       // 3. 检查是否点击了已选中的形状本身 (关键修复：不再判定矩形区域，而是判定点击目标)
       if (hit && selectedIds.includes(hit.id)) {
         prepareDrag('move');
-        e.stopPropagation();
+        // Fix: Use e.consume() instead of stopPropagation()
+        e.consume();
         return true;
       }
 
       return false;
     },
     onMouseMove: (e, ctx) => {
-      const { x, y } = ctx.getCanvasCoords(e.clientX, e.clientY);
+      // Fix: Use e.x and e.y directly as they are already canvas coordinates
+      const { x, y } = e;
       if (!dragMode || !initialRect || snapshots.length === 0) return;
 
       const dx = x - startMouse.x;

@@ -3,7 +3,8 @@
 import React, { useState, useCallback } from 'react';
 import { CanvasState, Shape } from '../types';
 import { Scene } from '../models/Scene';
-import { TextShape } from '../models/UIShape';
+// Fix: Import TextShape from its own specific model file
+import { TextShape } from '../models/TextShape';
 
 type DragMode = 'move' | 'resize' | 'rotate' | 'pan' | null;
 type ResizeHandle = 'tl' | 'tr' | 'bl' | 'br';
