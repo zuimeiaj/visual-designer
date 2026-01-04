@@ -11,7 +11,7 @@ export class CircleShape extends UIShape {
     }
     return updates;
   }
-  public onDraw(ctx: CanvasRenderingContext2D): void {
+  public onDraw(ctx: CanvasRenderingContext2D, zoom: number, isEditing: boolean): void {
     ctx.beginPath();
     ctx.arc(this.x + this.width / 2, this.y + this.height / 2, Math.min(this.width, this.height) / 2, 0, Math.PI * 2);
     ctx.fillStyle = this.fill; ctx.fill();

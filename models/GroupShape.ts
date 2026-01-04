@@ -15,8 +15,8 @@ export class GroupShape extends UIShape {
     if (children) this.children = children.map(c => UIShape.create(c));
   }
 
-  public onDraw(ctx: CanvasRenderingContext2D, zoom: number): void {
-    this.children.forEach(child => child.draw(ctx, zoom));
+  public onDraw(ctx: CanvasRenderingContext2D, zoom: number, isEditing: boolean): void {
+    this.children.forEach(child => child.draw(ctx, zoom, isEditing));
   }
 
   public hitTest(px: number, py: number): boolean {

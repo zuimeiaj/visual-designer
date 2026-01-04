@@ -1,6 +1,7 @@
 
 import { UIShape } from "./UIShape";
 import { Shape, CanvasState } from "../types";
+import { ConnectionShape } from "./ConnectionShape";
 
 export class Scene {
   private shapes: UIShape[] = [];
@@ -42,7 +43,11 @@ export class Scene {
   // Renders the scene's contents.
   public render(ctx: CanvasRenderingContext2D, state: CanvasState): void {
     this.shapes.forEach((shape) => {
-      shape.draw(ctx, state.zoom);
+      if (shape instanceof ConnectionShape) {
+        shape.drawWithScene(ctx, this, state);
+      } else {
+        shape.draw(ctx, state.zoom, state.editingId === shape.id);
+      }
     });
   }
 

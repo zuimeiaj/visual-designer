@@ -1,9 +1,15 @@
 
 import { CanvasPlugin, Shape, PluginContext } from '../types';
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 export const useSelectionPlugin = (): CanvasPlugin => {
   const [marquee, setMarquee] = useState<{ start: { x: number, y: number }, end: { x: number, y: number } } | null>(null);
+  const lastScreenPos = useRef<{ x: number, y: number } | null>(null);
+  const ctxRef = useRef<PluginContext | null>(null);
+  const rafRef = useRef<number | null>(null);
+
+  const EDGE_THRESHOLD = 50; // 距离边缘多少像素开始滚动
+  const MAX_SCROLL_SPEED = 12; // 最大滚动速度
 
   const getAABB = (s: Shape): { x: number, y: number, w: number, h: number } => {
     if (s.type === 'group' && s.children && s.children.length > 0) {
@@ -26,35 +32,102 @@ export const useSelectionPlugin = (): CanvasPlugin => {
     return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
   };
 
+  // 自动滚动循环
+  useEffect(() => {
+    const autoScroll = () => {
+      const ctx = ctxRef.current;
+      const screenPos = lastScreenPos.current;
+      const canvas = ctx?.canvas;
+
+      if (!ctx || !screenPos || !canvas || ctx.state.interactionState !== 'MARQUEE') {
+        rafRef.current = requestAnimationFrame(autoScroll);
+        return;
+      }
+
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = screenPos.x - rect.left;
+      const mouseY = screenPos.y - rect.top;
+
+      let dx = 0;
+      let dy = 0;
+
+      // 检测四个边缘
+      if (mouseX < EDGE_THRESHOLD) {
+        dx = Math.max(-MAX_SCROLL_SPEED, -((EDGE_THRESHOLD - mouseX) / EDGE_THRESHOLD) * MAX_SCROLL_SPEED);
+      } else if (mouseX > rect.width - EDGE_THRESHOLD) {
+        dx = Math.min(MAX_SCROLL_SPEED, ((mouseX - (rect.width - EDGE_THRESHOLD)) / EDGE_THRESHOLD) * MAX_SCROLL_SPEED);
+      }
+
+      if (mouseY < EDGE_THRESHOLD) {
+        dy = Math.max(-MAX_SCROLL_SPEED, -((EDGE_THRESHOLD - mouseY) / EDGE_THRESHOLD) * MAX_SCROLL_SPEED);
+      } else if (mouseY > rect.height - EDGE_THRESHOLD) {
+        dy = Math.min(MAX_SCROLL_SPEED, ((mouseY - (rect.height - EDGE_THRESHOLD)) / EDGE_THRESHOLD) * MAX_SCROLL_SPEED);
+      }
+
+      if (dx !== 0 || dy !== 0) {
+        ctx.setState(prev => {
+          const newOffset = { x: prev.offset.x - dx, y: prev.offset.y - dy };
+          
+          // 当画布滚动时，必须重新计算鼠标在世界坐标系中的位置
+          // 否则框选框的终点会留在原地
+          const newWorldEnd = {
+            x: (screenPos.x - rect.left - newOffset.x) / prev.zoom,
+            y: (screenPos.y - rect.top - newOffset.y) / prev.zoom
+          };
+
+          setMarquee(prevM => prevM ? { ...prevM, end: newWorldEnd } : null);
+
+          return { ...prev, offset: newOffset };
+        }, false);
+      }
+
+      rafRef.current = requestAnimationFrame(autoScroll);
+    };
+
+    rafRef.current = requestAnimationFrame(autoScroll);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
+
   return {
     name: 'selection',
     priority: 10,
     
     onInteraction: (type, e, ctx) => {
-      if (type === 'mousemove' && ctx.state.interactionState === 'MARQUEE') {
-        setMarquee(prev => {
-          if (!prev) return { start: { x: e.x, y: e.y }, end: { x: e.x, y: e.y } };
-          return { ...prev, end: { x: e.x, y: e.y } };
-        });
-        ctx.setCursor('crosshair');
-        e.consume();
+      ctxRef.current = ctx; // 保持对上下文的引用供滚动循环使用
+
+      if (type === 'mousemove') {
+        const me = e.nativeEvent as MouseEvent;
+        lastScreenPos.current = { x: me.clientX, y: me.clientY };
+
+        if (ctx.state.interactionState === 'MARQUEE') {
+          setMarquee(prev => {
+            if (!prev) return { start: { x: e.x, y: e.y }, end: { x: e.x, y: e.y } };
+            return { ...prev, end: { x: e.x, y: e.y } };
+          });
+          ctx.setCursor('crosshair');
+          e.consume();
+        }
       }
     },
 
     onDeselectAfter: (e, ctx) => {
       if (ctx.state.activeTool === 'select') {
+        const me = e.nativeEvent as MouseEvent;
+        lastScreenPos.current = { x: me.clientX, y: me.clientY };
         setMarquee({ start: { x: e.x, y: e.y }, end: { x: e.x, y: e.y } });
       }
     },
 
     onMouseUp: (e, ctx) => {
+      lastScreenPos.current = null;
       if (marquee) {
         const x1 = Math.min(marquee.start.x, marquee.end.x);
         const y1 = Math.min(marquee.start.y, marquee.end.y);
         const x2 = Math.max(marquee.start.x, marquee.end.x);
         const y2 = Math.max(marquee.start.y, marquee.end.y);
         
-        // Small threshold to prevent accidental selection on single click
         const isClick = Math.abs(x1 - x2) < 2 && Math.abs(y1 - y2) < 2;
 
         if (!isClick) {

@@ -53,7 +53,7 @@ export class TableShape extends UIShape {
     return this.tableData.merges.find(m => r >= m.r1 && r <= m.r2 && c >= m.c1 && c <= m.c2) || null;
   }
 
-  public onDraw(ctx: CanvasRenderingContext2D): void {
+  public onDraw(ctx: CanvasRenderingContext2D, zoom: number, isEditing: boolean): void {
     const { rows, cols, cells } = this.tableData;
     const x = this.x;
     const y = this.y;
@@ -66,7 +66,6 @@ export class TableShape extends UIShape {
       for (let c = 0; c < cols.length; c++) {
         const cell = cells[`${r},${c}`];
         const merge = this.getMergeAt(r, c);
-        
         if (merge) {
           if (r === merge.r1 && c === merge.c1) {
             const mw = cols.slice(merge.c1, merge.c2 + 1).reduce((a, b) => a + b, 0);
@@ -86,49 +85,41 @@ export class TableShape extends UIShape {
     }
     ctx.restore();
 
-    // 2. Draw grid lines intelligently skipping inner merge lines
+    // 2. Draw grid lines
     ctx.save();
     ctx.strokeStyle = this.stroke || '#3f3f46';
     ctx.lineWidth = this.strokeWidth || 1;
     ctx.beginPath();
-
-    // Horizontal segments
     let ty = y;
     for (let r = 0; r <= rows.length; r++) {
       let tx = x;
       for (let c = 0; c < cols.length; c++) {
         const cw = cols[c];
         if (r === 0 || r === rows.length) {
-          ctx.moveTo(tx, ty);
-          ctx.lineTo(tx + cw, ty);
+          ctx.moveTo(tx, ty); ctx.lineTo(tx + cw, ty);
         } else {
           const mAbove = this.getMergeAt(r - 1, c);
           const mBelow = this.getMergeAt(r, c);
           if (!mAbove || !mBelow || mAbove !== mBelow) {
-            ctx.moveTo(tx, ty);
-            ctx.lineTo(tx + cw, ty);
+            ctx.moveTo(tx, ty); ctx.lineTo(tx + cw, ty);
           }
         }
         tx += cw;
       }
       if (r < rows.length) ty += rows[r];
     }
-
-    // Vertical segments
     let tx = x;
     for (let c = 0; c <= cols.length; c++) {
       let ty = y;
       for (let r = 0; r < rows.length; r++) {
         const rh = rows[r];
         if (c === 0 || c === cols.length) {
-          ctx.moveTo(tx, ty);
-          ctx.lineTo(tx, ty + rh);
+          ctx.moveTo(tx, ty); ctx.lineTo(tx, ty + rh);
         } else {
           const mLeft = this.getMergeAt(r, c - 1);
           const mRight = this.getMergeAt(r, c);
           if (!mLeft || !mRight || mLeft !== mRight) {
-            ctx.moveTo(tx, ty);
-            ctx.lineTo(tx, ty + rh);
+            ctx.moveTo(tx, ty); ctx.lineTo(tx, ty + rh);
           }
         }
         ty += rh;
@@ -138,38 +129,29 @@ export class TableShape extends UIShape {
     ctx.stroke();
     ctx.restore();
 
-    // 3. Draw content
+    // 3. Draw content (Only if NOT editing the cell or if editing is handled differently)
     ctx.save();
-    ctx.fillStyle = this.fill || '#ffffff';
+    ctx.fillStyle = '#000000';
     ctx.font = `${this.fontSize || 12}px Inter`;
     ctx.textBaseline = 'middle';
-    
     currentY = y;
     for (let r = 0; r < rows.length; r++) {
       let currentX = x;
       for (let c = 0; c < cols.length; c++) {
         const merge = this.getMergeAt(r, c);
         const cell = cells[`${r},${c}`];
-        
         if (cell?.text && (!merge || (r === merge.r1 && c === merge.c1))) {
-           const cw = merge 
-             ? cols.slice(merge.c1, merge.c2 + 1).reduce((a, b) => a + b, 0)
-             : cols[c];
-           const ch = merge
-             ? rows.slice(merge.r1, merge.r2 + 1).reduce((a, b) => a + b, 0)
-             : rows[r];
-           
+           const cw = merge ? cols.slice(merge.c1, merge.c2 + 1).reduce((a, b) => a + b, 0) : cols[c];
+           const ch = merge ? rows.slice(merge.r1, merge.r2 + 1).reduce((a, b) => a + b, 0) : rows[r];
            ctx.save();
            ctx.beginPath();
            ctx.rect(currentX + 2, currentY + 2, cw - 4, ch - 4);
            ctx.clip();
-
            const align = cell.align || 'center';
            let tx = currentX + cw / 2;
            if (align === 'left') { tx = currentX + 5; ctx.textAlign = 'left'; }
            else if (align === 'right') { tx = currentX + cw - 5; ctx.textAlign = 'right'; }
            else { ctx.textAlign = 'center'; }
-
            ctx.fillText(cell.text, tx, currentY + ch / 2);
            ctx.restore();
         }
@@ -187,9 +169,7 @@ export class TableShape extends UIShape {
     const cos = Math.cos(-this.rotation), sin = Math.sin(-this.rotation);
     const lx = dx * cos - dy * sin + this.width / 2;
     const ly = dx * sin + dy * cos + this.height / 2;
-
     if (lx < 0 || lx > this.width || ly < 0 || ly > this.height) return null;
-
     let currentY = 0;
     for (let r = 0; r < this.tableData.rows.length; r++) {
       let currentX = 0;

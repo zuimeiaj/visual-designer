@@ -3,7 +3,7 @@ import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { 
   Square, Circle as CircleIcon, Type as TypeIcon, Image as ImageIcon, Minus,
   Download, Trash2, MousePointer2, Zap, Languages, Undo2, Redo2,
-  PenTool, Table as TableIcon
+  PenTool, Table as TableIcon, Share2, Diamond as DiamondIcon
 } from 'lucide-react';
 import CanvasEditor from './components/CanvasEditor';
 import Toolbar from './components/Toolbar';
@@ -19,6 +19,7 @@ import { useImagePlugin } from './plugins/ImagePlugin';
 import { useCachePlugin } from './plugins/CachePlugin';
 import { useTablePlugin } from './plugins/TablePlugin';
 import { useShortcutPlugin } from './plugins/ShortcutPlugin';
+import { useConnectionPlugin } from './plugins/ConnectionPlugin';
 import { I18nProvider, useTranslation } from './lang/i18n';
 import { useHistory } from './hooks/useHistory';
 import { UIShape } from './models/UIShape';
@@ -70,6 +71,7 @@ const MainApp: React.FC = () => {
   const tablePlugin = useTablePlugin();
   const shortcutPlugin = useShortcutPlugin();
   const cachePlugin = useCachePlugin(state.shapes);
+  const connectionPlugin = useConnectionPlugin();
 
   const plugins = useMemo(() => [
     rulerPlugin, 
@@ -82,8 +84,9 @@ const MainApp: React.FC = () => {
     transformPlugin, 
     smartGuidesPlugin,
     selectionPlugin,
-    shortcutPlugin
-  ], [textPlugin, transformPlugin, selectionPlugin, rulerPlugin, smartGuidesPlugin, contextMenuPlugin, penPlugin, imagePlugin, cachePlugin, tablePlugin, shortcutPlugin]);
+    shortcutPlugin,
+    connectionPlugin
+  ], [textPlugin, transformPlugin, selectionPlugin, rulerPlugin, smartGuidesPlugin, contextMenuPlugin, penPlugin, imagePlugin, cachePlugin, tablePlugin, shortcutPlugin, connectionPlugin]);
 
   const addShape = useCallback((type: ShapeType) => {
     const defaultTableData: TableData = {
@@ -101,8 +104,8 @@ const MainApp: React.FC = () => {
       width: type === 'table' ? 400 : (type === 'text' ? 200 : (type === 'line' ? 150 : 100)),
       height: type === 'table' ? 150 : (type === 'text' ? 40 : (type === 'line' ? 2 : 100)),
       rotation: 0,
-      fill: type === 'text' ? '#18181b' : (type === 'line' ? '#818cf8' : (type === 'circle' ? '#22c55e' : (type === 'table' ? '#ffffff' : '#4f46e5'))),
-      stroke: type === 'text' ? 'none' : (type === 'line' ? 'none' : (type === 'circle' ? '#16a34a' : '#3f3f46')),
+      fill: type === 'text' ? '#18181b' : (type === 'line' ? '#818cf8' : (type === 'circle' ? '#22c55e' : (type === 'diamond' ? '#f59e0b' : (type === 'table' ? '#ffffff' : '#4f46e5')))),
+      stroke: type === 'text' ? 'none' : (type === 'line' ? 'none' : (type === 'circle' ? '#16a34a' : (type === 'diamond' ? '#d97706' : '#3f3f46'))),
       strokeWidth: type === 'table' ? 1 : 2,
       text: type === 'text' ? t('app.doubleClickEdit') : undefined,
       fontSize: type === 'text' ? 16 : undefined,
@@ -116,7 +119,7 @@ const MainApp: React.FC = () => {
     }));
   }, [state.offset, state.zoom, t, setState]);
 
-  const toggleTool = (tool: ShapeType | 'select') => {
+  const toggleTool = (tool: ShapeType | 'select' | 'connect') => {
     setState(prev => ({ ...prev, activeTool: tool }), false);
   };
 
@@ -181,10 +184,12 @@ const MainApp: React.FC = () => {
         <div className="p-2 bg-indigo-600 rounded-lg shadow-lg shadow-indigo-500/20"><Zap className="w-6 h-6 text-white" /></div>
         <div className="flex flex-col gap-2">
           <ToolButton active={state.activeTool === 'select'} onClick={() => toggleTool('select')} icon={<MousePointer2 className="w-5 h-5" />} label={t('tools.select')} />
+          <ToolButton active={state.activeTool === 'connect'} onClick={() => toggleTool('connect')} icon={<Share2 className="w-5 h-5" />} label="Connect" />
           <ToolButton active={state.activeTool === 'curve'} onClick={() => toggleTool('curve')} icon={<PenTool className="w-5 h-5" />} label={t('tools.pen')} />
           <div className="h-[1px] bg-zinc-100 mx-2 my-1" />
           <ToolButton active={false} onClick={() => addShape('rect')} icon={<Square className="w-5 h-5" />} label={t('tools.rect')} />
           <ToolButton active={false} onClick={() => addShape('circle')} icon={<CircleIcon className="w-5 h-5" />} label={t('tools.circle')} />
+          <ToolButton active={false} onClick={() => addShape('diamond')} icon={<DiamondIcon className="w-5 h-5" />} label={t('tools.diamond')} />
           <ToolButton active={false} onClick={() => addShape('line')} icon={<Minus className="w-5 h-5" />} label={t('tools.line')} />
           <ToolButton active={false} onClick={() => addShape('text')} icon={<TypeIcon className="w-5 h-5" />} label={t('tools.text')} />
           <ToolButton active={false} onClick={() => addShape('image')} icon={<ImageIcon className="w-5 h-5" />} label={t('tools.image')} />

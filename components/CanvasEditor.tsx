@@ -122,7 +122,8 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
       return;
     }
 
-    if (state.activeTool !== 'select') {
+    // Allow selection and transformation logic for both 'select' and 'connect' tools
+    if (state.activeTool !== 'select' && state.activeTool !== 'connect') {
       setState(prev => ({ ...prev, interactionState: 'DRAWING' }), false);
       return;
     }
@@ -218,8 +219,6 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
       const canvas = canvasRef.current;
       if (!canvas) return;
       
-      // 核心修复：只有当滚轮事件直接作用于 canvas 时，才拦截并处理画布缩放
-      // 这允许覆盖在顶部的 UI 元素（如模态框）正常使用原生滚动
       if (e.target !== canvas) return;
 
       e.preventDefault();

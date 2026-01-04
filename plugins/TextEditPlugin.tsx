@@ -11,7 +11,9 @@ export const useTextEditPlugin = (): CanvasPlugin => {
     onEditModeEnter: (e, ctx) => {
       if (ctx.state.editingId) return;
       const shape = ctx.state.shapes.find(s => s.id === e.id);
-      if (shape && shape.type === 'text') {
+      const editableTypes = ['text', 'rect', 'diamond'];
+      
+      if (shape && editableTypes.includes(shape.type)) {
         ctx.setState(prev => ({ 
           ...prev, 
           editingId: shape.id, 
@@ -27,37 +29,56 @@ export const useTextEditPlugin = (): CanvasPlugin => {
       if (!editingId) return null;
       
       const shape = ctx.state.shapes.find(s => s.id === editingId);
-      if (!shape || shape.type !== 'text') return null;
+      if (!shape) return null;
 
+      const isPureText = shape.type === 'text';
       const { zoom, offset } = ctx.state;
-      const editorWidth = shape.width * zoom;
-      const editorHeight = Math.max(shape.height * zoom, (shape.fontSize || 16) * 1.5 * zoom);
+      
+      // Calculate display dimensions based on zoom
+      const dispWidth = shape.width * zoom;
+      const dispHeight = shape.height * zoom;
+      
+      // For containers, limit the editing area and center it
+      const editorWidth = (isPureText ? shape.width : (shape.type === 'diamond' ? shape.width * 0.6 : shape.width - 10)) * zoom;
+      const editorHeight = (isPureText ? Math.max(shape.height * zoom, (shape.fontSize || 16) * 1.5 * zoom) : (shape.height * 0.8 * zoom));
 
       const style: React.CSSProperties = {
         position: 'absolute',
-        left: 0,
-        top: 0,
+        // Start from shape top-left relative to window
+        left: shape.x * zoom + offset.x,
+        top: shape.y * zoom + offset.y,
+        width: dispWidth,
+        height: dispHeight,
+        // Match the canvas rotation pivot (center of shape)
+        transformOrigin: 'center center',
+        transform: `rotate(${shape.rotation}rad)`,
+        pointerEvents: 'none',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 10000,
+      };
+
+      const textareaStyle: React.CSSProperties = {
         width: editorWidth,
         height: editorHeight,
-        transform: `translate(${shape.x * zoom + offset.x}px, ${shape.y * zoom + offset.y}px) rotate(${shape.rotation}rad)`,
-        transformOrigin: '0 0',
         fontSize: (shape.fontSize || 16) * zoom,
-        color: shape.fill,
-        background: 'white',
-        border: '2px solid #6366f1',
+        color: (isPureText || shape.fill === '#18181b' || shape.fill === '#4f46e5') ? '#ffffff' : '#000000',
+        background: isPureText ? 'rgba(99, 102, 241, 0.1)' : 'transparent',
+        border: isPureText ? '2px solid #6366f1' : 'none',
         borderRadius: '4px',
         outline: 'none',
-        padding: '2px',
-        margin: '-2px',
+        padding: '0',
+        margin: '0',
         resize: 'none',
         overflow: 'hidden',
         whiteSpace: 'pre-wrap',
         wordBreak: 'break-word',
         fontFamily: 'Inter, sans-serif',
         lineHeight: 1.2,
-        zIndex: 10000,
-        boxShadow: '0 0 0 100vw rgba(0,0,0,0.1)',
-        caretColor: '#6366f1'
+        caretColor: isPureText ? '#6366f1' : '#ffffff',
+        textAlign: isPureText ? 'left' : 'center',
+        pointerEvents: 'auto',
       };
 
       const finishEditing = () => {
@@ -65,28 +86,38 @@ export const useTextEditPlugin = (): CanvasPlugin => {
       };
 
       return (
-        <textarea
-          key={`text-editor-${editingId}`}
-          autoFocus
-          style={style}
-          value={shape.text || ''}
-          onBlur={finishEditing}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              finishEditing();
-            }
-            if (e.key === 'Escape') {
-              finishEditing();
-            }
-          }}
-          onChange={(e) => {
-            const newText = e.target.value;
-            const newHeight = TextShape.measureHeight(newText, shape.width, shape.fontSize || 16);
-            ctx.updateShape(editingId, { text: newText, height: newHeight });
-          }}
-          onMouseDown={(e) => e.stopPropagation()}
-        />
+        <div 
+          className="fixed inset-0 z-[9999] pointer-events-none"
+          onMouseDown={finishEditing}
+        >
+          <div style={style}>
+            <textarea
+              key={`text-editor-${editingId}`}
+              autoFocus
+              style={textareaStyle}
+              value={shape.text || ''}
+              onBlur={finishEditing}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  finishEditing();
+                }
+                if (e.key === 'Escape') {
+                  finishEditing();
+                }
+              }}
+              onChange={(e) => {
+                const newText = e.target.value;
+                const updates: Partial<typeof shape> = { text: newText };
+                if (isPureText) {
+                  updates.height = TextShape.measureHeight(newText, shape.width, shape.fontSize || 16);
+                }
+                ctx.updateShape(editingId, updates);
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+            />
+          </div>
+        </div>
       );
     }
   };

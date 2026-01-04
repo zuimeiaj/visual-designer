@@ -13,6 +13,7 @@ export const zh: TranslationKeys = {
     select: "选择",
     rect: "矩形",
     circle: "圆形",
+    diamond: "菱形",
     text: "文本",
     image: "图片",
     line: "直线",

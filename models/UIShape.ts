@@ -46,21 +46,14 @@ export abstract class UIShape {
     this.curvePoints = data.curvePoints;
   }
 
-  /**
-   * Registers a shape class to the factory.
-   */
   public static register(type: string, constructor: UIShapeConstructor) {
     this.registry.set(type, constructor);
   }
 
-  /**
-   * Dynamic factory method using the registry.
-   */
   public static create(data: Shape): UIShape {
     const Constructor = this.registry.get(data.type);
     if (!Constructor) {
       console.error(`UIShape: No constructor registered for type "${data.type}". Defaulting to Rect.`);
-      // We could return a NullShape or a default Rect if registration fails
       const Rect = this.registry.get('rect');
       return Rect ? new Rect(data) : (null as any);
     }
@@ -81,18 +74,18 @@ export abstract class UIShape {
     return updates;
   }
 
-  public draw(ctx: CanvasRenderingContext2D, zoom: number): void {
+  public draw(ctx: CanvasRenderingContext2D, zoom: number, isEditing: boolean = false): void {
     ctx.save();
     const cx = this.x + this.width / 2;
     const cy = this.y + this.height / 2;
     ctx.translate(cx, cy);
     ctx.rotate(this.rotation);
     ctx.translate(-cx, -cy);
-    this.onDraw(ctx, zoom);
+    this.onDraw(ctx, zoom, isEditing);
     ctx.restore();
   }
 
-  public abstract onDraw(ctx: CanvasRenderingContext2D, zoom: number): void;
+  public abstract onDraw(ctx: CanvasRenderingContext2D, zoom: number, isEditing: boolean): void;
 
   public getCorners() {
     const cx = this.x + this.width / 2;

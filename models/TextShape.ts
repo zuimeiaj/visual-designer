@@ -29,10 +29,10 @@ export class TextShape extends UIShape {
     let lineCount = 0;
     paragraphs.forEach(p => {
       if (!p) { lineCount++; return; }
-      const words = p.split(' ');
+      const words = p.split('');
       let line = '';
       words.forEach(w => {
-        const test = line ? line + ' ' + w : w;
+        const test = line + w;
         if (ctx.measureText(test).width > width) { lineCount++; line = w; }
         else line = test;
       });
@@ -41,7 +41,8 @@ export class TextShape extends UIShape {
     return lineCount * fontSize * 1.2;
   }
 
-  public onDraw(ctx: CanvasRenderingContext2D): void {
+  public onDraw(ctx: CanvasRenderingContext2D, zoom: number, isEditing: boolean): void {
+    if (isEditing) return;
     ctx.fillStyle = this.fill;
     ctx.font = `${this.fontSize}px Inter`;
     ctx.textBaseline = 'top';
@@ -49,10 +50,10 @@ export class TextShape extends UIShape {
     const lh = this.fontSize * 1.2;
     let currY = this.y;
     paragraphs.forEach(p => {
-      const words = p.split(' ');
+      const words = p.split('');
       let line = '';
       words.forEach(w => {
-        const test = line ? line + ' ' + w : w;
+        const test = line + w;
         if (ctx.measureText(test).width > this.width) {
           ctx.fillText(line, this.x, currY);
           currY += lh; line = w;

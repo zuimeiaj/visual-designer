@@ -21,11 +21,10 @@ export class ImageShape extends UIShape {
     }
   }
 
-  public onDraw(ctx: CanvasRenderingContext2D): void {
+  public onDraw(ctx: CanvasRenderingContext2D, zoom: number, isEditing: boolean): void {
     if (this.img && this.img.src && this.img.complete && this.img.naturalWidth > 0) {
       ctx.drawImage(this.img, this.x, this.y, this.width, this.height);
     } else {
-      // Placeholder for loading or empty image
       ctx.fillStyle = '#18181b';
       ctx.fillRect(this.x, this.y, this.width, this.height);
       
@@ -33,7 +32,6 @@ export class ImageShape extends UIShape {
       ctx.lineWidth = 1;
       ctx.strokeRect(this.x, this.y, this.width, this.height);
       
-      // Draw simple instruction text
       ctx.fillStyle = '#71717a';
       ctx.font = '10px Inter';
       ctx.textAlign = 'center';

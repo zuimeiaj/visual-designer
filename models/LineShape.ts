@@ -2,9 +2,8 @@
 import { UIShape } from "./UIShape";
 
 export class LineShape extends UIShape {
-  public onDraw(ctx: CanvasRenderingContext2D): void {
+  public onDraw(ctx: CanvasRenderingContext2D, zoom: number, isEditing: boolean): void {
     ctx.beginPath();
-    // Line is drawn centered vertically within its 'height' box
     const midY = this.y + this.height / 2;
     ctx.moveTo(this.x, midY);
     ctx.lineTo(this.x + this.width, midY);

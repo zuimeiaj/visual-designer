@@ -4,7 +4,7 @@ import { UIShape } from "./models/UIShape";
 import { Scene } from "./models/Scene";
 import { CanvasRenderer } from "./services/canvasRenderer";
 
-export type ShapeType = 'rect' | 'circle' | 'text' | 'image' | 'group' | 'line' | 'path' | 'curve' | 'table';
+export type ShapeType = 'rect' | 'circle' | 'diamond' | 'text' | 'image' | 'group' | 'line' | 'path' | 'curve' | 'table' | 'connection';
 
 export interface CurvePoint {
   x: number;
@@ -33,6 +33,8 @@ export interface TableData {
   merges: TableMerge[];
 }
 
+export type AnchorPort = 'top' | 'right' | 'bottom' | 'left';
+
 export interface Shape {
   id: string;
   type: ShapeType;
@@ -46,6 +48,7 @@ export interface Shape {
   strokeWidth: number;
   text?: string;
   fontSize?: number;
+  textColor?: string;
   src?: string;
   children?: Shape[];
   points?: { x: number; y: number }[];
@@ -54,9 +57,14 @@ export interface Shape {
   isTemporary?: boolean;
   locked?: boolean;
   closed?: boolean;
+  // Connection specific
+  fromId?: string;
+  toId?: string;
+  fromPort?: AnchorPort;
+  toPort?: AnchorPort;
 }
 
-export type InteractionState = 'IDLE' | 'SELECTING' | 'TRANSFORMING' | 'EDITING' | 'DRAWING' | 'PANNING' | 'MARQUEE';
+export type InteractionState = 'IDLE' | 'SELECTING' | 'TRANSFORMING' | 'EDITING' | 'DRAWING' | 'PANNING' | 'MARQUEE' | 'CONNECTING';
 export type TransformType = 'MOVE' | 'RESIZE' | 'ROTATE';
 
 export interface CanvasState {
@@ -65,7 +73,7 @@ export interface CanvasState {
   editingId: string | null;
   zoom: number;
   offset: { x: number; y: number };
-  activeTool: ShapeType | 'select';
+  activeTool: ShapeType | 'select' | 'connect';
   interactionState: InteractionState;
   activeTransformType?: TransformType | null;
 }
@@ -153,7 +161,7 @@ export interface CanvasPlugin {
 
   onShapeCreate?: (shape: Shape, ctx: PluginContext) => void;
   onShapeDelete?: (ids: string[], ctx: PluginContext) => void;
-  onPropertyChange?: (id: string, updates: Partial<Shape>, ctx: PluginContext) => void;
+  onShapePropertyChange?: (id: string, updates: Partial<Shape>, ctx: PluginContext) => void;
 
   onInteraction?: (type: string, e: BaseEvent, ctx: PluginContext) => void;
 
