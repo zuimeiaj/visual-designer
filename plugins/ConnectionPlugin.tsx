@@ -9,12 +9,10 @@ export const useConnectionPlugin = (): CanvasPlugin => {
   const hoveredPort = useRef<{ id: string, port: AnchorPort } | null>(null);
 
   const getPortPos = (shape: Shape, port: AnchorPort, zoom: number) => {
-    // 指示器仍然显示在偏移点上，方便用户点击
     return ConnectionShape.getPointWithOffset(shape, port, PORT_OFFSET / zoom);
   };
 
   const getEdgePos = (shape: Shape, port: AnchorPort) => {
-    // 形状边缘上的实际位置
     return ConnectionShape.getPointWithOffset(shape, port, 0);
   };
 
@@ -99,8 +97,13 @@ export const useConnectionPlugin = (): CanvasPlugin => {
       const port = findPortAt(ctx, e.x, e.y);
       hoveredPort.current = port;
 
+      if (port) {
+        ctx.setCursor('pointer');
+      }
+
       if (activeSource) {
         setDragPos({ x: e.x, y: e.y });
+        ctx.setCursor('crosshair');
         e.consume();
       }
     },
@@ -141,8 +144,9 @@ export const useConnectionPlugin = (): CanvasPlugin => {
       const c = ctx.renderer?.ctx;
       if (!c) return;
 
+      const dpr = window.devicePixelRatio || 1;
       c.save();
-      c.setTransform(1, 0, 0, 1, 0, 0);
+      c.setTransform(dpr, 0, 0, dpr, 0, 0); 
       c.translate(offset.x, offset.y);
       c.scale(zoom, zoom);
 
@@ -173,7 +177,6 @@ export const useConnectionPlugin = (): CanvasPlugin => {
           const isHovered = hoveredPort.current?.id === s.id && hoveredPort.current?.port === p;
           const isActive = activeSource?.id === s.id && activeSource?.port === p;
 
-          // 绘制从边缘到锚点的虚线
           c.beginPath();
           c.setLineDash([2 / zoom, 2 / zoom]);
           c.moveTo(edge.x, edge.y);

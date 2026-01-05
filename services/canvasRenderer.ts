@@ -10,30 +10,38 @@ export class CanvasRenderer {
   }
 
   public render(state: CanvasState, scene: Scene, plugins: CanvasPlugin[], pluginCtx: PluginContext) {
-    const { width, height } = this.ctx.canvas;
-    this.clear(width, height);
+    const dpr = window.devicePixelRatio || 1;
+    const canvas = this.ctx.canvas;
     
-    // 1. 渲染背景层插件
+    // 清除物理像素区域
+    this.clear();
+    
+    // 渲染背景层插件
     plugins.forEach(p => p.onRenderBackground?.(pluginCtx));
 
     this.ctx.save();
-    this.applyTransform(state);
+    // 应用设备缩放和用户坐标系
+    this.applyTransform(state, dpr);
     
-    // 2. 基础图形渲染
+    // 渲染图形内容
     scene.render(this.ctx, state);
     
     this.ctx.restore();
 
-    // 3. 渲染前景层插件 (标尺、辅助线、控制柄等)
+    // 渲染前景层插件 (标尺、辅助线等)
     plugins.forEach(p => p.onRenderForeground?.(pluginCtx));
   }
 
-  private clear(width: number, height: number) {
+  private clear() {
+    const canvas = this.ctx.canvas;
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
-    this.ctx.clearRect(0, 0, width, height);
+    this.ctx.clearRect(0, 0, canvas.width, canvas.height);
   }
 
-  private applyTransform(state: CanvasState) {
+  private applyTransform(state: CanvasState, dpr: number) {
+    // 首先应用设备像素缩放
+    this.ctx.scale(dpr, dpr);
+    // 然后应用用户的平移和缩放
     this.ctx.translate(state.offset.x, state.offset.y);
     this.ctx.scale(state.zoom, state.zoom);
   }

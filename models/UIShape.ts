@@ -1,5 +1,5 @@
 
-import { Shape, ShapeType, CurvePoint } from "../types";
+import { Shape, ShapeType, CurvePoint, InternalHit } from "../types";
 
 export interface TransformParams {
   x?: number;
@@ -122,6 +122,15 @@ export abstract class UIShape {
     const padding = (this.type === 'line' || this.type === 'path' || this.type === 'curve') ? 10 : 0;
     return lx >= this.x - padding && lx <= this.x + this.width + padding && 
            ly >= this.y - padding && ly <= this.y + this.height + padding;
+  }
+
+  /**
+   * 框架层获取内部命中目标的通用方法。
+   * 子类（如 TableShape）应重写此方法。
+   */
+  public getInternalHit(px: number, py: number): InternalHit | null {
+    if (!this.hitTest(px, py)) return null;
+    return { type: 'shape', id: this.id };
   }
 
   public update(data: Partial<Shape>): void {

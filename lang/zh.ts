@@ -19,6 +19,11 @@ export const zh: TranslationKeys = {
     line: "直线",
     pen: "钢笔工具",
     delete: "删除",
+    table: "表格",
+    connection: "连接线",
+    connect: "连接工具",
+    group: "组合",
+    curve: "曲线",
   },
   ai: {
     assistant: "AI 助手",

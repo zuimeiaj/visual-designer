@@ -59,7 +59,9 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
   }, [state.offset, state.zoom]);
 
   const setCursor = useCallback((cursor: string) => {
-    if (canvasRef.current) canvasRef.current.style.cursor = cursor;
+    if (canvasRef.current && canvasRef.current.style.cursor !== cursor) {
+      canvasRef.current.style.cursor = cursor;
+    }
   }, []);
 
   const pluginCtx: PluginContext = useMemo(() => ({
@@ -75,10 +77,14 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
   const createBaseEvent = (e: React.MouseEvent | MouseEvent | React.WheelEvent | WheelEvent): BaseEvent => {
     const coords = getCanvasCoords(e.clientX, e.clientY);
     let consumed = false;
+    const hitShape = scene.hitTest(coords.x, coords.y);
+    const internalHit = hitShape ? hitShape.getInternalHit(coords.x, coords.y) : null;
+
     return {
       x: coords.x,
       y: coords.y,
       nativeEvent: e,
+      internalHit,
       get consumed() { return consumed; },
       consume: () => { consumed = true; }
     };
@@ -91,9 +97,7 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
       targetIds: forcedTargetIds || state.selectedIds,
       deltaX: base.x - lastMousePos.current.x,
       deltaY: base.y - lastMousePos.current.y,
-      scaleX: 1,
-      scaleY: 1,
-      rotation: 0
+      scaleX: 1, scaleY: 1, rotation: 0
     };
     for (const p of sortedPlugins) {
       p[type]?.(event, pluginCtx);
@@ -108,6 +112,25 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
 
     const hit = scene.hitTest(base.x, base.y);
 
+    if (state.editingId) {
+      if (hit?.id === state.editingId) {
+        let handledInternally = false;
+        for (const p of sortedPlugins) {
+          if (p.onMouseDown?.(base, hit, pluginCtx) === true || base.consumed) {
+            handledInternally = true;
+            break;
+          }
+        }
+        if (!handledInternally) {
+          setState(prev => ({ ...prev, editingId: null, interactionState: 'IDLE' }), false);
+        } else {
+          return;
+        }
+      } else {
+        setState(prev => ({ ...prev, editingId: null, interactionState: 'IDLE' }), false);
+      }
+    }
+
     for (const p of sortedPlugins) {
       if (p.onMouseDown?.(base, hit, pluginCtx)) return;
       if (base.consumed) return;
@@ -116,13 +139,10 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
     if (e.button === 2) {
       for (const p of sortedPlugins) {
         if (p.onContextMenu?.(base, hit, pluginCtx)) break;
-        p.onInteraction?.('contextmenu', base, pluginCtx);
-        if (base.consumed) break;
       }
       return;
     }
 
-    // Allow selection and transformation logic for both 'select' and 'connect' tools
     if (state.activeTool !== 'select' && state.activeTool !== 'connect') {
       setState(prev => ({ ...prev, interactionState: 'DRAWING' }), false);
       return;
@@ -131,13 +151,10 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
     if (hit) {
       const isMulti = e.shiftKey;
       let nextIds = [...state.selectedIds];
-      
       if (!isMulti && !state.selectedIds.includes(hit.id)) {
         nextIds = [hit.id];
       } else if (isMulti) {
-        nextIds = state.selectedIds.includes(hit.id) 
-          ? state.selectedIds.filter(id => id !== hit.id)
-          : [...state.selectedIds, hit.id];
+        nextIds = state.selectedIds.includes(hit.id) ? state.selectedIds.filter(id => id !== hit.id) : [...state.selectedIds, hit.id];
       }
 
       setState(prev => ({ 
@@ -146,32 +163,31 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
         interactionState: 'TRANSFORMING',
         activeTransformType: 'MOVE'
       }), false);
-
       dispatchTransform('onTransformStart', base, 'MOVE', nextIds);
     } else {
       if (!e.shiftKey) {
-        setState(prev => ({ 
-          ...prev, 
-          selectedIds: [],
-          interactionState: 'MARQUEE'
-        }), false);
+        setState(prev => ({ ...prev, selectedIds: [], editingId: null, interactionState: 'MARQUEE' }), true);
       }
     }
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
     const base = createBaseEvent(e);
-    setCursor('default');
+    if (state.interactionState === 'IDLE' || state.interactionState === 'EDITING') {
+      if (state.activeTool === 'select' || state.activeTool === 'connect') {
+        setCursor('default');
+      } else {
+        setCursor('crosshair');
+      }
+    }
 
     if (state.interactionState === 'TRANSFORMING') {
       dispatchTransform('onTransformUpdate', base, state.activeTransformType || 'MOVE');
     } else {
       for (const p of sortedPlugins) {
         p.onMouseMove?.(base, pluginCtx);
-        p.onInteraction?.('mousemove', base, pluginCtx);
       }
     }
-
     lastMousePos.current = { x: base.x, y: base.y };
   };
 
@@ -180,26 +196,33 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
     if (state.interactionState === 'TRANSFORMING') {
       dispatchTransform('onTransformEnd', base, state.activeTransformType || 'MOVE');
     }
-    for (const p of sortedPlugins) {
-      p.onMouseUp?.(base, pluginCtx);
+    for (const p of sortedPlugins) p.onMouseUp?.(base, pluginCtx);
+    if (state.interactionState !== 'EDITING') {
+      setState(prev => ({ ...prev, interactionState: 'IDLE', activeTransformType: null }), true);
     }
-    setState(prev => ({ ...prev, interactionState: 'IDLE', activeTransformType: null }), true);
   };
 
   const handleDoubleClick = (e: React.MouseEvent) => {
     const base = createBaseEvent(e);
     const hit = scene.hitTest(base.x, base.y);
 
-    for (const p of sortedPlugins) {
-      p.onDoubleClick?.(base, hit, pluginCtx);
-      if (base.consumed) break;
-    }
-
-    if (hit) {
-      const editEvent: EditEvent = { ...base, id: hit.id, mode: hit.type === 'text' ? 'TEXT' : 'CUSTOM' };
+    if (hit && !state.editingId) {
       for (const p of sortedPlugins) {
-        p.onEditModeEnter?.(editEvent, pluginCtx);
-        if (editEvent.consumed) break;
+        p.onDoubleClick?.(base, hit, pluginCtx);
+        if (base.consumed) break;
+      }
+      if (!base.consumed) {
+        setState(prev => ({ 
+          ...prev, 
+          editingId: hit.id, 
+          interactionState: 'EDITING',
+          selectedIds: [hit.id] 
+        }), true);
+      }
+    } else if (state.editingId) {
+      for (const p of sortedPlugins) {
+        p.onDoubleClick?.(base, hit, pluginCtx);
+        if (base.consumed) break;
       }
     }
   };
@@ -214,37 +237,6 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [sortedPlugins, pluginCtx]);
 
-  useEffect(() => {
-    const handleWheel = (e: WheelEvent) => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      
-      if (e.target !== canvas) return;
-
-      e.preventDefault();
-      const base = createBaseEvent(e);
-      const viewEvent: ViewEvent = { ...base, zoom: state.zoom, offset: state.offset };
-      for (const p of sortedPlugins) {
-        p.onViewChange?.(viewEvent, pluginCtx);
-        if (viewEvent.consumed) break;
-      }
-    };
-
-    const blockDefault = (e: Event) => e.preventDefault();
-
-    window.addEventListener('wheel', handleWheel, { passive: false });
-    window.addEventListener('gesturestart', blockDefault, { passive: false });
-    window.addEventListener('gesturechange', blockDefault, { passive: false });
-    window.addEventListener('gestureend', blockDefault, { passive: false });
-
-    return () => {
-      window.removeEventListener('wheel', handleWheel);
-      window.removeEventListener('gesturestart', blockDefault);
-      window.removeEventListener('gesturechange', blockDefault);
-      window.removeEventListener('gestureend', blockDefault);
-    };
-  }, [sortedPlugins, pluginCtx, state.zoom, state.offset]);
-
   const draw = useCallback(() => {
     if (!rendererRef.current) return;
     rendererRef.current.render(state, scene, sortedPlugins, pluginCtx);
@@ -254,8 +246,9 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
     const handleResize = () => {
       const canvas = canvasRef.current;
       if (canvas && canvas.parentElement) {
-        canvas.width = canvas.parentElement.clientWidth;
-        canvas.height = canvas.parentElement.clientHeight;
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.parentElement.getBoundingClientRect();
+        canvas.width = rect.width * dpr; canvas.height = rect.height * dpr;
         draw();
       }
     };
@@ -270,16 +263,8 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
   }, [draw]);
 
   return (
-    <div className="w-full h-full relative overflow-hidden bg-white">
-      <canvas
-        ref={canvasRef}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onDoubleClick={handleDoubleClick}
-        onContextMenu={e => e.preventDefault()}
-        className="w-full h-full outline-none"
-      />
+    <div className="w-full h-full relative overflow-hidden bg-white flex items-start justify-start">
+      <canvas ref={canvasRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onDoubleClick={handleDoubleClick} onContextMenu={e => e.preventDefault()} className="block outline-none" />
       {sortedPlugins.map((p, i) => <React.Fragment key={p.name + i}>{p.onRenderOverlay?.(pluginCtx)}</React.Fragment>)}
     </div>
   );

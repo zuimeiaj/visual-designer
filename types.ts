@@ -6,6 +6,14 @@ import { CanvasRenderer } from "./services/canvasRenderer";
 
 export type ShapeType = 'rect' | 'circle' | 'diamond' | 'text' | 'image' | 'group' | 'line' | 'path' | 'curve' | 'table' | 'connection';
 
+// 内部命中目标的描述
+export interface InternalHit {
+  type: string;
+  id: string; // 父级 Shape ID
+  subId?: string; // 子元素标识，如 "cell-0-1"
+  metadata?: any; // 额外数据，如 { r: 0, c: 1 }
+}
+
 export interface CurvePoint {
   x: number;
   y: number;
@@ -17,6 +25,8 @@ export interface CellData {
   text: string;
   fill?: string;
   align?: 'left' | 'center' | 'right';
+  textColor?: string;
+  fontSize?: number;
 }
 
 export interface TableMerge {
@@ -27,13 +37,14 @@ export interface TableMerge {
 }
 
 export interface TableData {
-  rows: number[]; // heights
-  cols: number[]; // widths
-  cells: Record<string, CellData>; // key: "r,c"
+  rows: number[];
+  cols: number[];
+  cells: Record<string, CellData>;
   merges: TableMerge[];
 }
 
 export type AnchorPort = 'top' | 'right' | 'bottom' | 'left';
+export type TextAlign = 'left' | 'center' | 'right';
 
 export interface Shape {
   id: string;
@@ -49,6 +60,7 @@ export interface Shape {
   text?: string;
   fontSize?: number;
   textColor?: string;
+  textAlign?: TextAlign;
   src?: string;
   children?: Shape[];
   points?: { x: number; y: number }[];
@@ -57,7 +69,6 @@ export interface Shape {
   isTemporary?: boolean;
   locked?: boolean;
   closed?: boolean;
-  // Connection specific
   fromId?: string;
   toId?: string;
   fromPort?: AnchorPort;
@@ -67,25 +78,13 @@ export interface Shape {
 export type InteractionState = 'IDLE' | 'SELECTING' | 'TRANSFORMING' | 'EDITING' | 'DRAWING' | 'PANNING' | 'MARQUEE' | 'CONNECTING';
 export type TransformType = 'MOVE' | 'RESIZE' | 'ROTATE';
 
-export interface CanvasState {
-  shapes: Shape[];
-  selectedIds: string[];
-  editingId: string | null;
-  zoom: number;
-  offset: { x: number; y: number };
-  activeTool: ShapeType | 'select' | 'connect';
-  interactionState: InteractionState;
-  activeTransformType?: TransformType | null;
-}
-
-// --- Semantic Event Definitions ---
-
 export interface BaseEvent {
   x: number;
   y: number;
   nativeEvent: React.MouseEvent | MouseEvent | React.WheelEvent | WheelEvent;
   consumed: boolean;
   consume: () => void;
+  internalHit?: InternalHit | null; // 框架识别出的内部目标
 }
 
 export interface SelectionEvent extends BaseEvent {
@@ -136,36 +135,39 @@ export interface PluginContext {
 export interface CanvasPlugin {
   name: string;
   priority?: number;
-
   onKeyDown?: (e: KeyboardEvent, ctx: PluginContext) => boolean | void;
   onMouseDown?: (e: BaseEvent, hit: UIShape | null, ctx: PluginContext) => boolean | void;
   onMouseMove?: (e: BaseEvent, ctx: PluginContext) => void;
   onMouseUp?: (e: BaseEvent, ctx: PluginContext) => void;
   onDoubleClick?: (e: BaseEvent, hit: UIShape | null, ctx: PluginContext) => void;
   onContextMenu?: (e: BaseEvent, hit: UIShape | null, ctx: PluginContext) => boolean | void;
-
   onSelectionBefore?: (e: SelectionEvent, ctx: PluginContext) => void;
   onSelectionAfter?: (e: SelectionEvent, ctx: PluginContext) => void;
   onDeselectBefore?: (e: SelectionEvent, ctx: PluginContext) => void;
   onDeselectAfter?: (e: SelectionEvent, ctx: PluginContext) => void;
-
   onTransformStart?: (e: TransformEvent, ctx: PluginContext) => void;
   onTransformUpdate?: (e: TransformEvent, ctx: PluginContext) => void;
   onTransformEnd?: (e: TransformEvent, ctx: PluginContext) => void;
-
   onEditModeEnter?: (e: EditEvent, ctx: PluginContext) => void;
   onEditModeExit?: (e: EditEvent, ctx: PluginContext) => void;
-
   onAlignmentUpdate?: (e: AlignmentEvent, ctx: PluginContext) => void;
   onViewChange?: (e: ViewEvent, ctx: PluginContext) => void;
-
   onShapeCreate?: (shape: Shape, ctx: PluginContext) => void;
   onShapeDelete?: (ids: string[], ctx: PluginContext) => void;
   onShapePropertyChange?: (id: string, updates: Partial<Shape>, ctx: PluginContext) => void;
-
   onInteraction?: (type: string, e: BaseEvent, ctx: PluginContext) => void;
-
   onRenderBackground?: (ctx: PluginContext) => void;
   onRenderForeground?: (ctx: PluginContext) => void;
   onRenderOverlay?: (ctx: PluginContext) => React.ReactNode;
+}
+
+export interface CanvasState {
+  shapes: Shape[];
+  selectedIds: string[];
+  editingId: string | null;
+  zoom: number;
+  offset: { x: number; y: number };
+  activeTool: ShapeType | 'select' | 'connect';
+  interactionState: InteractionState;
+  activeTransformType?: TransformType | null;
 }

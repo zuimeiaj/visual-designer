@@ -17,6 +17,11 @@ export const en = {
     line: "Line",
     pen: "Pen Tool",
     delete: "Delete",
+    table: "Table",
+    connection: "Connection",
+    connect: "Connect Tool",
+    group: "Group",
+    curve: "Curve",
   },
   ai: {
     assistant: "AI Assistant",

@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { CanvasPlugin, PluginContext, EditEvent } from '../types';
+import { CanvasPlugin, PluginContext } from '../types';
 import { TextShape } from '../models/TextShape';
 
 export const useTextEditPlugin = (): CanvasPlugin => {
@@ -31,25 +31,24 @@ export const useTextEditPlugin = (): CanvasPlugin => {
       const shape = ctx.state.shapes.find(s => s.id === editingId);
       if (!shape) return null;
 
+      // 如果是表格，交由 TablePlugin 处理
+      if (shape.type === 'table') return null;
+
       const isPureText = shape.type === 'text';
       const { zoom, offset } = ctx.state;
       
-      // Calculate display dimensions based on zoom
       const dispWidth = shape.width * zoom;
       const dispHeight = shape.height * zoom;
       
-      // For containers, limit the editing area and center it
       const editorWidth = (isPureText ? shape.width : (shape.type === 'diamond' ? shape.width * 0.6 : shape.width - 10)) * zoom;
       const editorHeight = (isPureText ? Math.max(shape.height * zoom, (shape.fontSize || 16) * 1.5 * zoom) : (shape.height * 0.8 * zoom));
 
       const style: React.CSSProperties = {
         position: 'absolute',
-        // Start from shape top-left relative to window
         left: shape.x * zoom + offset.x,
         top: shape.y * zoom + offset.y,
         width: dispWidth,
         height: dispHeight,
-        // Match the canvas rotation pivot (center of shape)
         transformOrigin: 'center center',
         transform: `rotate(${shape.rotation}rad)`,
         pointerEvents: 'none',
@@ -86,37 +85,32 @@ export const useTextEditPlugin = (): CanvasPlugin => {
       };
 
       return (
-        <div 
-          className="fixed inset-0 z-[9999] pointer-events-none"
-          onMouseDown={finishEditing}
-        >
-          <div style={style}>
-            <textarea
-              key={`text-editor-${editingId}`}
-              autoFocus
-              style={textareaStyle}
-              value={shape.text || ''}
-              onBlur={finishEditing}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  finishEditing();
-                }
-                if (e.key === 'Escape') {
-                  finishEditing();
-                }
-              }}
-              onChange={(e) => {
-                const newText = e.target.value;
-                const updates: Partial<typeof shape> = { text: newText };
-                if (isPureText) {
-                  updates.height = TextShape.measureHeight(newText, shape.width, shape.fontSize || 16);
-                }
-                ctx.updateShape(editingId, updates);
-              }}
-              onMouseDown={(e) => e.stopPropagation()}
-            />
-          </div>
+        <div style={style}>
+          <textarea
+            key={`text-editor-${editingId}`}
+            autoFocus
+            style={textareaStyle}
+            value={shape.text || ''}
+            onBlur={finishEditing}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                finishEditing();
+              }
+              if (e.key === 'Escape') {
+                finishEditing();
+              }
+            }}
+            onChange={(e) => {
+              const newText = e.target.value;
+              const updates: Partial<typeof shape> = { text: newText };
+              if (isPureText) {
+                updates.height = TextShape.measureHeight(newText, shape.width, shape.fontSize || 16);
+              }
+              ctx.updateShape(editingId, updates);
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+          />
         </div>
       );
     }
