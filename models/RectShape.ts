@@ -32,7 +32,6 @@ export class RectShape extends UIShape {
     ctx.beginPath();
     const r = Math.min(this.cornerRadius, this.width / 2, this.height / 2);
     if (r > 0) {
-      // @ts-ignore
       if (ctx.roundRect) {
         // @ts-ignore
         ctx.roundRect(0, 0, this.width, this.height, r);
@@ -74,7 +73,6 @@ export class RectShape extends UIShape {
         let drawX = this.width / 2;
         if (this.textAlign === 'left') drawX = padding;
         if (this.textAlign === 'right') drawX = this.width - padding;
-        
         ctx.fillText(line, drawX, startY);
         startY += lineHeight;
       });

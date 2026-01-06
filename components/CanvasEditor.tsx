@@ -2,8 +2,8 @@
 import React, { useRef, useEffect, useCallback, useMemo } from 'react';
 import { 
   CanvasState, Shape, CanvasPlugin, PluginContext, 
-  InteractionState, TransformType, BaseEvent, SelectionEvent, 
-  TransformEvent, EditEvent, ViewEvent 
+  InteractionState, TransformType, BaseEvent, 
+  TransformEvent, ViewEvent 
 } from '../types';
 import { CanvasRenderer } from '../services/canvasRenderer';
 import { Scene } from '../models/Scene';
@@ -15,12 +15,15 @@ interface Props {
   plugins?: CanvasPlugin[];
   undo: () => void;
   redo: () => void;
+  actions: any;
 }
 
-const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins = [], undo, redo }) => {
+const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins = [], undo, redo, actions }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<CanvasRenderer | null>(null);
-  const scene = useMemo(() => new Scene(state.shapes), []);
+  const shapes = state?.shapes || [];
+  
+  const scene = useMemo(() => new Scene(shapes), []);
   
   const lastMousePos = useRef({ x: 0, y: 0 });
   const startMousePos = useRef({ x: 0, y: 0 });
@@ -28,20 +31,25 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
   const fpsRef = useRef({ lastTime: performance.now(), frames: 0 });
 
   useEffect(() => {
-    state.shapes.forEach(s => {
+    // Ensure we handle potentially undefined shapes gracefully
+    const currentShapes = state?.shapes || [];
+    
+    currentShapes.forEach(s => {
       const existing = scene.getShapes().find(os => os.id === s.id);
       if (existing) existing.update(s);
       else scene.add(s);
     });
-    const shapeIdsInState = new Set(state.shapes.map(s => s.id));
-    const currentShapes = scene.getShapes();
-    for (let i = currentShapes.length - 1; i >= 0; i--) {
-      if (!shapeIdsInState.has(currentShapes[i].id)) scene.remove(currentShapes[i].id);
+    
+    const shapeIdsInState = new Set(currentShapes.map(s => s.id));
+    const sceneShapes = scene.getShapes();
+    for (let i = sceneShapes.length - 1; i >= 0; i--) {
+      if (!shapeIdsInState.has(sceneShapes[i].id)) scene.remove(sceneShapes[i].id);
     }
+    
     const indexMap = new Map();
-    state.shapes.forEach((s, i) => indexMap.set(s.id, i));
+    currentShapes.forEach((s, i) => indexMap.set(s.id, i));
     scene.getShapes().sort((a, b) => (indexMap.get(a.id) ?? -1) - (indexMap.get(b.id) ?? -1));
-  }, [state.shapes, scene]);
+  }, [state?.shapes, scene]);
 
   useEffect(() => {
     if (canvasRef.current) {
@@ -54,11 +62,13 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
+    const zoom = state?.zoom ?? 1;
+    const offset = state?.offset ?? { x: 0, y: 0 };
     return {
-      x: (clientX - rect.left - state.offset.x) / state.zoom,
-      y: (clientY - rect.top - state.offset.y) / state.zoom
+      x: (clientX - rect.left - offset.x) / zoom,
+      y: (clientY - rect.top - offset.y) / zoom
     };
-  }, [state.offset, state.zoom]);
+  }, [state?.offset, state?.zoom]);
 
   const setCursor = useCallback((cursor: string) => {
     if (canvasRef.current && canvasRef.current.style.cursor !== cursor) {
@@ -69,8 +79,8 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
   const pluginCtx: PluginContext = useMemo(() => ({
     state, setState, updateShape, getCanvasCoords,
     scene, canvas: canvasRef.current, renderer: rendererRef.current,
-    undo, redo, setCursor
-  }), [state, setState, updateShape, getCanvasCoords, scene, undo, redo, setCursor]);
+    undo, redo, setCursor, actions
+  }), [state, setState, updateShape, getCanvasCoords, scene, undo, redo, setCursor, actions]);
 
   const sortedPlugins = useMemo(() => {
     return [...plugins].sort((a, b) => (b.priority || 0) - (a.priority || 0));
@@ -102,27 +112,27 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
   };
 
   const dispatchTransform = (type: 'onTransformStart' | 'onTransformUpdate' | 'onTransformEnd', base: BaseEvent, transformType: TransformType, forcedTargetIds?: string[]) => {
+    const selectedIds = state?.selectedIds || [];
     const event: TransformEvent = {
       ...base,
       type: transformType,
-      targetIds: forcedTargetIds || state.selectedIds,
+      targetIds: forcedTargetIds || selectedIds,
       deltaX: base.x - lastMousePos.current.x,
       deltaY: base.y - lastMousePos.current.y,
       scaleX: 1, scaleY: 1, rotation: 0
     };
     for (const p of sortedPlugins) {
+      // @ts-ignore - dynamic access to transform methods
       p[type]?.(event, pluginCtx);
       if (event.consumed) break;
     }
   };
 
-  // --- 彻底缩放锁定的核心逻辑 ---
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const handleNativeWheel = (e: WheelEvent) => {
-      // 拦截所有尝试触发浏览器缩放的操作
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault(); 
       }
@@ -136,10 +146,9 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
     };
 
     const handleGesture = (e: any) => {
-      e.preventDefault(); // 针对 macOS/iPad 触控板缩放手势的底层拦截
+      e.preventDefault();
     };
 
-    // 使用原生监听器并关闭 passive 模式
     canvas.addEventListener('wheel', handleNativeWheel, { passive: false });
     canvas.addEventListener('gesturestart', handleGesture, { passive: false });
     canvas.addEventListener('gesturechange', handleGesture, { passive: false });
@@ -151,7 +160,7 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
       canvas.removeEventListener('gesturechange', handleGesture);
       canvas.removeEventListener('gestureend', handleGesture);
     };
-  }, [sortedPlugins, pluginCtx, state.zoom, state.offset]);
+  }, [sortedPlugins, pluginCtx, state?.zoom, state?.offset]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button === 2) return; 
@@ -196,11 +205,11 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
 
     if (hit) {
       const isMulti = e.shiftKey;
-      let nextIds = [...state.selectedIds];
-      if (!isMulti && !state.selectedIds.includes(hit.id)) {
+      let nextIds = [...(state?.selectedIds || [])];
+      if (!isMulti && !nextIds.includes(hit.id)) {
         nextIds = [hit.id];
       } else if (isMulti) {
-        nextIds = state.selectedIds.includes(hit.id) ? state.selectedIds.filter(id => id !== hit.id) : [...state.selectedIds, hit.id];
+        nextIds = nextIds.includes(hit.id) ? nextIds.filter(id => id !== hit.id) : [...nextIds, hit.id];
       }
 
       setState(prev => ({ 
@@ -303,7 +312,7 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
   }, [sortedPlugins, pluginCtx]);
 
   const draw = useCallback(() => {
-    if (!rendererRef.current) return;
+    if (!rendererRef.current || !state) return;
     
     const now = performance.now();
     fpsRef.current.frames++;

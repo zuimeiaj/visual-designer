@@ -46,12 +46,12 @@ export class DiamondShape extends UIShape {
 
     if (this.text && !isEditing) {
       ctx.save();
-      ctx.fillStyle = this.textColor || '#ffffff'; 
+      ctx.fillStyle = this.textColor || (this.fill === '#18181b' || this.fill === '#4f46e5' ? '#ffffff' : '#000000');
       ctx.font = `${this.fontSize}px Inter`;
       ctx.textAlign = this.textAlign;
       ctx.textBaseline = 'middle';
       
-      const maxWidth = this.width * 0.6;
+      const maxWidth = this.width * 0.55; 
       const lines = this.wrapText(ctx, this.text, maxWidth);
       const lineHeight = (this.fontSize || 14) * 1.2;
       const totalHeight = lines.length * lineHeight;

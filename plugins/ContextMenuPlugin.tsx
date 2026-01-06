@@ -8,7 +8,7 @@ import {
 } from '../types';
 import { 
   Layers, ArrowUp, ArrowDown, ChevronUp, ChevronDown, 
-  Group, Ungroup, Trash2, Plus, Minus, Rows, Columns
+  Group, Ungroup, Trash2, Plus, Minus, Rows, Columns, Copy
 } from 'lucide-react';
 import { useTranslation } from '../lang/i18n';
 import { UIShape } from '../models/UIShape';
@@ -228,6 +228,10 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
           )}
 
           <div className="h-[1px] bg-zinc-100 my-1.5 mx-2" />
+          <MenuItem icon={<Copy className="w-4 h-4" />} label={t('menu.exportSelected')} disabled={!hasSelection} onClick={() => {
+            ctx.actions.exportSelection();
+            closeMenu();
+          }} />
           <MenuItem icon={<Trash2 className="w-4 h-4" />} label={t('menu.delete')} danger disabled={!hasSelection} onClick={() => {
             ctx.setState(prev => ({ ...prev, shapes: prev.shapes.filter(s => !selectedIds.includes(s.id)), selectedIds: [] }), true);
             closeMenu();

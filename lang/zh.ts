@@ -5,9 +5,21 @@ export const zh: TranslationKeys = {
   app: {
     title: "yoyo design",
     export: "导出",
+    exportImport: "导出 / 导入",
+    exportPNG: "导出 PNG 图片",
+    exportJPG: "导出 JPG 图片",
+    exportXML: "保存工程 (.yoyo)",
+    exportSelection: "导出选中图形 (.yshape)",
+    importFile: "打开工程 (.yoyo)",
+    importShapes: "导入图形片段 (.yshape)",
     processing: "处理中...",
     welcome: "欢迎使用 yoyo design",
     doubleClickEdit: "双击进行编辑",
+    layers: "图层面板",
+    scenes: "场景列表",
+    addScene: "新建场景",
+    defaultSceneName: "未命名场景",
+    noElements: "画布上暂无元素"
   },
   tools: {
     select: "选择",
@@ -23,8 +35,8 @@ export const zh: TranslationKeys = {
     connection: "连接线",
     connect: "连接工具",
     group: "组合",
-    // Fix: Remove 'ungroup' and duplicate 'delete', add 'curve' to match TranslationKeys
     curve: "曲线",
+    layers: "图层"
   },
   ai: {
     assistant: "AI 助手",
@@ -44,7 +56,6 @@ export const zh: TranslationKeys = {
     height: "高度",
     rotate: "旋转",
     size: "字号",
-    // Fix: Removed invalid 'text' property to match TranslationKeys
     content: "内容",
     contentPlaceholder: "请输入文本...",
   },
@@ -57,5 +68,6 @@ export const zh: TranslationKeys = {
     group: "组合",
     ungroup: "取消组合",
     delete: "删除",
+    exportSelected: "导出选中图形",
   }
 };

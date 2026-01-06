@@ -4,14 +4,13 @@ import { UIShape } from "./models/UIShape";
 import { Scene } from "./models/Scene";
 import { CanvasRenderer } from "./services/canvasRenderer";
 
-export type ShapeType = 'rect' | 'circle' | 'diamond' | 'text' | 'image' | 'group' | 'line' | 'path' | 'curve' | 'table' | 'connection';
+export type ShapeType = 'rect' | 'circle' | 'diamond' | 'text' | 'image' | 'group' | 'line' | 'path' | 'curve' | 'table' | 'connection' | 'icon';
 
-// 内部命中目标的描述
 export interface InternalHit {
   type: string;
-  id: string; // 父级 Shape ID
-  subId?: string; // 子元素标识，如 "cell-0-1"
-  metadata?: any; // 额外数据，如 { r: 0, c: 1 }
+  id: string; 
+  subId?: string; 
+  metadata?: any; 
 }
 
 export interface CurvePoint {
@@ -29,18 +28,11 @@ export interface CellData {
   fontSize?: number;
 }
 
-export interface TableMerge {
-  r1: number;
-  c1: number;
-  r2: number;
-  c2: number;
-}
-
 export interface TableData {
   rows: number[];
   cols: number[];
   cells: Record<string, CellData>;
-  merges: TableMerge[];
+  merges: any[];
 }
 
 export type AnchorPort = 'top' | 'right' | 'bottom' | 'left';
@@ -57,12 +49,13 @@ export interface Shape {
   fill: string;
   stroke: string;
   strokeWidth: number;
-  cornerRadius?: number; // 新增：圆角大小
+  cornerRadius?: number;
   text?: string;
   fontSize?: number;
   textColor?: string;
   textAlign?: TextAlign;
   src?: string;
+  iconName?: string; // New property for icons
   children?: Shape[];
   points?: { x: number; y: number }[];
   curvePoints?: CurvePoint[];
@@ -77,7 +70,7 @@ export interface Shape {
 }
 
 export type InteractionState = 'IDLE' | 'SELECTING' | 'TRANSFORMING' | 'EDITING' | 'DRAWING' | 'PANNING' | 'MARQUEE' | 'CONNECTING';
-export type TransformType = 'MOVE' | 'RESIZE' | 'ROTATE' | 'RADIUS'; // 新增：RADIUS 变换
+export type TransformType = 'MOVE' | 'RESIZE' | 'ROTATE' | 'RADIUS';
 
 export interface BaseEvent {
   x: number;
@@ -85,12 +78,7 @@ export interface BaseEvent {
   nativeEvent: React.MouseEvent | MouseEvent | React.WheelEvent | WheelEvent;
   consumed: boolean;
   consume: () => void;
-  internalHit?: InternalHit | null; // 框架识别出的内部目标
-}
-
-export interface SelectionEvent extends BaseEvent {
-  ids: string[];
-  isMultiSelect: boolean;
+  internalHit?: InternalHit | null;
 }
 
 export interface TransformEvent extends BaseEvent {
@@ -101,23 +89,11 @@ export interface TransformEvent extends BaseEvent {
   scaleX: number;
   scaleY: number;
   rotation: number;
-  handle?: string;
-}
-
-export interface EditEvent extends BaseEvent {
-  id: string;
-  mode: 'TEXT' | 'PATH' | 'CUSTOM' | 'TABLE';
 }
 
 export interface ViewEvent extends BaseEvent {
   zoom: number;
   offset: { x: number, y: number };
-}
-
-export interface AlignmentEvent extends BaseEvent {
-  snappedX: boolean;
-  snappedY: boolean;
-  guides: any[];
 }
 
 export interface PluginContext {
@@ -131,6 +107,7 @@ export interface PluginContext {
   undo: () => void;
   redo: () => void;
   setCursor: (cursor: string) => void;
+  actions: any;
 }
 
 export interface CanvasPlugin {
@@ -142,28 +119,27 @@ export interface CanvasPlugin {
   onMouseUp?: (e: BaseEvent, ctx: PluginContext) => void;
   onDoubleClick?: (e: BaseEvent, hit: UIShape | null, ctx: PluginContext) => void;
   onContextMenu?: (e: BaseEvent, hit: UIShape | null, ctx: PluginContext) => boolean | void;
-  onSelectionBefore?: (e: SelectionEvent, ctx: PluginContext) => void;
-  onSelectionAfter?: (e: SelectionEvent, ctx: PluginContext) => void;
-  onDeselectBefore?: (e: SelectionEvent, ctx: PluginContext) => void;
-  onDeselectAfter?: (e: SelectionEvent, ctx: PluginContext) => void;
-  onTransformStart?: (e: TransformEvent, ctx: PluginContext) => void;
-  onTransformUpdate?: (e: TransformEvent, ctx: PluginContext) => void;
-  onTransformEnd?: (e: TransformEvent, ctx: PluginContext) => void;
-  onEditModeEnter?: (e: EditEvent, ctx: PluginContext) => void;
-  onEditModeExit?: (e: EditEvent, ctx: PluginContext) => void;
-  onAlignmentUpdate?: (e: AlignmentEvent, ctx: PluginContext) => void;
-  onViewChange?: (e: ViewEvent, ctx: PluginContext) => void;
-  onShapeCreate?: (shape: Shape, ctx: PluginContext) => void;
-  onShapeDelete?: (ids: string[], ctx: PluginContext) => void;
-  onShapePropertyChange?: (id: string, updates: Partial<Shape>, ctx: PluginContext) => void;
-  onInteraction?: (type: string, e: BaseEvent, ctx: PluginContext) => void;
   onRenderBackground?: (ctx: PluginContext) => void;
   onRenderForeground?: (ctx: PluginContext) => void;
   onRenderOverlay?: (ctx: PluginContext) => React.ReactNode;
+  onViewChange?: (e: ViewEvent, ctx: PluginContext) => void;
+  onInteraction?: (type: string, e: BaseEvent, ctx: PluginContext) => void;
+  onTransformStart?: (e: TransformEvent, ctx: PluginContext) => void;
+  onTransformUpdate?: (e: TransformEvent, ctx: PluginContext) => void;
+  onTransformEnd?: (e: TransformEvent, ctx: PluginContext) => void;
+  onEditModeEnter?: (e: { id: string, consume: () => void }, ctx: PluginContext) => void;
+}
+
+export interface SceneInfo {
+  id: string;
+  name: string;
+  shapes: Shape[];
 }
 
 export interface CanvasState {
-  shapes: Shape[];
+  scenes: SceneInfo[];
+  activeSceneId: string;
+  shapes: Shape[]; 
   selectedIds: string[];
   editingId: string | null;
   zoom: number;

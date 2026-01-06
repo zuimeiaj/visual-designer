@@ -10,7 +10,7 @@ interface Props {
   shapes: Shape[];
 }
 
-const SidePanel: React.FC<Props> = ({ onAction, isProcessing, shapes }) => {
+const SidePanel: React.FC<Props> = ({ onAction, isProcessing, shapes = [] }) => {
   const [prompt, setPrompt] = useState('');
   const { t, language } = useTranslation();
 
@@ -18,23 +18,25 @@ const SidePanel: React.FC<Props> = ({ onAction, isProcessing, shapes }) => {
     onAction(action);
   };
 
+  const shapesCount = Array.isArray(shapes) ? shapes.length : 0;
+
   return (
-    <div className="flex flex-col h-full p-4 overflow-y-auto">
-      <div className="flex items-center gap-2 mb-6">
+    <div className="flex flex-col h-full p-4">
+      <div className="flex items-center gap-2 mb-6 shrink-0">
         <Sparkles className="w-5 h-5 text-indigo-400" />
         <h2 className="text-sm font-semibold uppercase tracking-wider">{t('ai.assistant')}</h2>
       </div>
 
-      <div className="flex-1 flex flex-col gap-6">
+      <div className="flex-1 flex flex-col gap-6 overflow-y-auto min-h-0 pr-1">
         {/* Chat Input */}
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 shrink-0">
           <label className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">{t('ai.describeDesign')}</label>
           <div className="relative">
             <textarea 
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder={t('ai.placeholder')}
-              className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-3 text-sm min-h-[100px] focus:ring-2 focus:ring-indigo-500 outline-none transition-all placeholder:text-zinc-600 resize-none"
+              className="w-full bg-zinc-50 border border-zinc-200 rounded-xl p-3 text-sm min-h-[120px] focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all placeholder:text-zinc-400 resize-none"
             />
             <button 
               onClick={() => {
@@ -44,7 +46,7 @@ const SidePanel: React.FC<Props> = ({ onAction, isProcessing, shapes }) => {
                 }
               }}
               disabled={isProcessing || !prompt.trim()}
-              className="absolute bottom-2 right-2 p-2 bg-indigo-600 rounded-lg hover:bg-indigo-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="absolute bottom-2 right-2 p-2 bg-zinc-900 text-white rounded-lg hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
             >
               {isProcessing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
             </button>
@@ -52,7 +54,7 @@ const SidePanel: React.FC<Props> = ({ onAction, isProcessing, shapes }) => {
         </div>
 
         {/* Quick Actions */}
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 shrink-0">
           <label className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">{t('ai.suggestions')}</label>
           <div className="grid grid-cols-1 gap-2">
             <QuickActionButton 
@@ -75,16 +77,16 @@ const SidePanel: React.FC<Props> = ({ onAction, isProcessing, shapes }) => {
             />
           </div>
         </div>
+      </div>
 
-        {/* Status */}
-        <div className="mt-auto p-4 rounded-xl bg-zinc-800/30 border border-zinc-800">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] text-zinc-400">{t('ai.canvasElements', { count: shapes.length })}</span>
-            <span className="text-[10px] font-mono text-zinc-300">{shapes.length}</span>
-          </div>
-          <div className="w-full bg-zinc-800 h-1 rounded-full overflow-hidden">
-            <div className="bg-indigo-500 h-full" style={{ width: `${Math.min(shapes.length * 5, 100)}%` }}></div>
-          </div>
+      {/* Status */}
+      <div className="mt-4 p-4 rounded-xl bg-zinc-50 border border-zinc-200 shrink-0">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[10px] text-zinc-400 font-bold uppercase">{t('ai.canvasElements', { count: shapesCount })}</span>
+          <span className="text-[10px] font-mono text-zinc-900 font-bold">{shapesCount}</span>
+        </div>
+        <div className="w-full bg-zinc-200 h-1 rounded-full overflow-hidden">
+          <div className="bg-indigo-500 h-full transition-all duration-500" style={{ width: `${Math.min(shapesCount * 5, 100)}%` }}></div>
         </div>
       </div>
     </div>
@@ -101,14 +103,14 @@ interface QuickActionProps {
 const QuickActionButton: React.FC<QuickActionProps> = ({ icon, label, description, onClick }) => (
   <button 
     onClick={onClick}
-    className="flex items-center gap-3 p-3 rounded-xl border border-zinc-800 hover:border-zinc-600 hover:bg-zinc-800/50 transition-all text-left group"
+    className="flex items-center gap-3 p-3 rounded-xl border border-zinc-200 hover:border-indigo-300 hover:bg-indigo-50/30 transition-all text-left group bg-white"
   >
-    <div className="p-2 bg-zinc-800 rounded-lg group-hover:bg-indigo-500/10 group-hover:text-indigo-400 transition-colors">
+    <div className="p-2 bg-zinc-50 rounded-lg group-hover:bg-indigo-100 group-hover:text-indigo-600 transition-colors">
       {icon}
     </div>
     <div>
-      <div className="text-xs font-semibold">{label}</div>
-      <div className="text-[10px] text-zinc-500">{description}</div>
+      <div className="text-xs font-bold text-zinc-800">{label}</div>
+      <div className="text-[10px] text-zinc-500 font-medium">{description}</div>
     </div>
   </button>
 );

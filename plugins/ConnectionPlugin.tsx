@@ -56,7 +56,8 @@ export const useConnectionPlugin = (): CanvasPlugin => {
 
   return {
     name: 'connection-plugin',
-    priority: 120,
+    // 优先级提升至 250，高于 TransformPlugin(200)，确保端口点击优先
+    priority: 250,
 
     onMouseDown: (e, hit, ctx) => {
       const port = findPortAt(ctx, e.x, e.y);
@@ -188,7 +189,8 @@ export const useConnectionPlugin = (): CanvasPlugin => {
 
           c.beginPath();
           c.arc(pos.x, pos.y, (isHovered || isActive) ? dotSize * 1.5 : dotSize, 0, Math.PI * 2);
-          c.fillStyle = (isHovered || isActive) ? '#6366f1' : '#ffffff';
+          const portFill = (isHovered || isActive) ? '#6366f1' : '#ffffff';
+          c.fillStyle = portFill;
           c.strokeStyle = '#6366f1';
           c.lineWidth = 1.5 / zoom;
           c.fill();

@@ -6,6 +6,13 @@ import { UIShape } from '../models/UIShape';
 type DragMode = 'move' | 'resize' | 'rotate' | null;
 type ResizeHandle = 'tl' | 'tr' | 'bl' | 'br';
 
+const THEME = {
+  accent: '#18A0FB',
+  handleFill: '#FFFFFF',
+  handleSize: 7,
+  padding: 0
+};
+
 interface ShapeSnapshot {
   id: string;
   type: string;
@@ -28,9 +35,6 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
   
   const [snapshots, setSnapshots] = useState<ShapeSnapshot[]>([]);
   const [initialRect, setInitialRect] = useState<{ x: number, y: number, w: number, h: number } | null>(null);
-
-  const VISUAL_PADDING = 0; // 已调整为 0
-  const HANDLE_RADIUS = 4;
 
   const getMultiAABB = (shapes: Shape[], ids: string[]) => {
     const selected = shapes.filter(s => ids.includes(s.id));
@@ -79,7 +83,7 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
       const rect = getMultiAABB(shapes, selectedIds);
       if (!rect) return false;
 
-      const p = VISUAL_PADDING / zoom;
+      const p = THEME.padding / zoom;
       const pivot = { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
       const threshold = 18 / zoom;
       
@@ -96,6 +100,7 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
         ctx.setState(prev => ({ ...prev, interactionState: 'TRANSFORMING' }), false);
       };
 
+      // Rotation handle placement (Figma-like detached handle)
       const rotPos = { x: pivot.x, y: rect.y - p - 30 / zoom };
       if (Math.hypot(x - rotPos.x, y - rotPos.y) < threshold) {
         prepareDrag('rotate');
@@ -207,7 +212,7 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
       if (!rect) return;
 
       const dpr = window.devicePixelRatio || 1;
-      const c = ctx.renderer.ctx, z = zoom, p = VISUAL_PADDING / z;
+      const c = ctx.renderer.ctx, z = zoom, p = THEME.padding / z;
       
       c.save();
       c.setTransform(dpr, 0, 0, dpr, 0, 0); 
@@ -224,22 +229,21 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
         c.translate(-fixedPoint.x, -fixedPoint.y);
       }
       
-      c.strokeStyle = '#6366f1'; 
-      c.lineWidth = 1 / z;
-      c.setLineDash([4 / z, 2 / z]); 
+      c.strokeStyle = THEME.accent; 
+      c.lineWidth = 1.5 / z;
       c.strokeRect(rect.x - p, rect.y - p, rect.w + 2 * p, rect.h + 2 * p);
-      c.setLineDash([]);
       
       if (!dragMode) {
         c.beginPath();
         c.moveTo(rect.x + rect.w / 2, rect.y - p);
-        c.lineTo(rect.x + rect.w / 2, rect.y - p - 30 / z);
+        c.lineTo(rect.x + rect.w / 2, rect.y - p - 25 / z);
         c.stroke();
 
-        c.fillStyle = '#ffffff';
+        c.fillStyle = THEME.handleFill;
+        c.strokeStyle = THEME.accent;
         c.lineWidth = 1.5 / z;
         c.beginPath();
-        c.arc(rect.x + rect.w / 2, rect.y - p - 30 / z, HANDLE_RADIUS / z, 0, Math.PI * 2);
+        c.arc(rect.x + rect.w / 2, rect.y - p - 25 / z, THEME.handleSize / z, 0, Math.PI * 2);
         c.fill();
         c.stroke();
 
@@ -249,8 +253,9 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
           if (h.includes('l')) hx = rect.x - p; else hx = rect.x + rect.w + p;
           if (h.includes('t')) hy = rect.y - p; else hy = rect.y + rect.h + p;
           
+          const s = (THEME.handleSize * 1.2) / z;
           c.beginPath();
-          c.arc(hx, hy, HANDLE_RADIUS / z, 0, Math.PI * 2);
+          c.rect(hx - s/2, hy - s/2, s, s);
           c.fill();
           c.stroke();
         });

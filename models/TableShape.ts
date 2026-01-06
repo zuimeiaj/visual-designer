@@ -8,7 +8,8 @@ export class TableShape extends UIShape {
   public fontSize: number = 14;
   public textColor?: string;
   public activeCell: { r: number, c: number } | null = null;
-  private cellRenderers: Map<string, RectShape> = new Map();
+  // Use a getter pattern to ensure the Map is always initialized correctly even after deserialization weirdness
+  private _cellRenderers: Map<string, RectShape> = new Map();
 
   constructor(data: Shape) {
     super(data);
@@ -16,11 +17,18 @@ export class TableShape extends UIShape {
     this.textColor = data.textColor;
     this.tableData = data.tableData || {
       rows: [30, 30, 30],
-      cols: [100, 100, 100],
+      cols: [120, 120, 120],
       cells: {},
       merges: []
     };
     this.syncCellRenderers();
+  }
+
+  private get cellRenderers(): Map<string, RectShape> {
+    if (!(this._cellRenderers instanceof Map)) {
+      this._cellRenderers = new Map();
+    }
+    return this._cellRenderers;
   }
 
   private syncCellRenderers() {
@@ -44,7 +52,7 @@ export class TableShape extends UIShape {
         }
       }
     }
-    for (const key of this.cellRenderers.keys()) {
+    for (const key of Array.from(this.cellRenderers.keys())) {
       if (!currentKeys.has(key)) this.cellRenderers.delete(key);
     }
   }
@@ -98,13 +106,12 @@ export class TableShape extends UIShape {
 
         if (renderer) {
           const isCellBeingEdited = this.activeCell && this.activeCell.r === r && this.activeCell.c === c;
-          // Note: renderer.x/y are relative to parent (TableShape origin)
           renderer.update({
             x: currentX, y: currentY, width: cols[c], height: rows[r],
             fill: cellData?.fill || 'transparent',
             text: cellData?.text || '',
             fontSize: cellData?.fontSize || this.fontSize,
-            textColor: cellData?.textColor || this.textColor || '#1f2937',
+            textColor: cellData?.textColor || this.textColor || '#18181b',
             textAlign: cellData?.align || 'center'
           });
           renderer.draw(ctx, zoom, !!isCellBeingEdited);
@@ -115,7 +122,7 @@ export class TableShape extends UIShape {
     }
 
     ctx.beginPath();
-    ctx.strokeStyle = (this.stroke && this.stroke !== 'none') ? this.stroke : '#000000';
+    ctx.strokeStyle = (this.stroke && this.stroke !== 'none') ? this.stroke : '#d4d4d8';
     ctx.lineWidth = 1 / zoom;
 
     let ty = 0;
@@ -133,7 +140,7 @@ export class TableShape extends UIShape {
     ctx.stroke();
 
     if (this.stroke !== 'none' && this.stroke !== 'transparent') {
-      ctx.strokeStyle = this.stroke || '#000000';
+      ctx.strokeStyle = this.stroke || '#d4d4d8';
       ctx.lineWidth = this.strokeWidth || 1;
       ctx.strokeRect(0, 0, this.width, this.height);
     }
@@ -146,22 +153,25 @@ export class TableShape extends UIShape {
     const cos = Math.cos(-this.rotation), sin = Math.sin(-this.rotation);
     const lx = dx * cos - dy * sin + this.width / 2;
     const ly = dx * sin + dy * cos + this.height / 2;
-    const hitTolerance = 6;
+    
+    const hitTolerance = 8;
     if (lx < -hitTolerance || lx > this.width + hitTolerance || ly < -hitTolerance || ly > this.height + hitTolerance) return null;
+    
     let currentX = 0;
     for (let c = 0; c < this.tableData.cols.length; c++) {
       currentX += this.tableData.cols[c];
-      if (Math.abs(lx - currentX) < hitTolerance) {
+      if (Math.abs(lx - currentX) < 6) {
         return { type: 'col-resize', id: this.id, metadata: { index: c } };
       }
     }
     let currentY = 0;
     for (let r = 0; r < this.tableData.rows.length; r++) {
       currentY += this.tableData.rows[r];
-      if (Math.abs(ly - currentY) < hitTolerance) {
+      if (Math.abs(ly - currentY) < 6) {
         return { type: 'row-resize', id: this.id, metadata: { index: r } };
       }
     }
+    
     let cellY = 0;
     for (let r = 0; r < this.tableData.rows.length; r++) {
       let cellX = 0;

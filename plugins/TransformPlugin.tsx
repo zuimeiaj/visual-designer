@@ -5,6 +5,13 @@ import { UIShape } from '../models/UIShape';
 
 type ResizeHandle = 'tl' | 'tr' | 'bl' | 'br' | 'line-start' | 'line-end';
 
+const THEME = {
+  accent: '#18A0FB', // Figma Blue
+  handleFill: '#FFFFFF',
+  handleSize: 7,
+  padding: 0
+};
+
 interface ShapeSnapshot extends Shape {}
 
 export const useTransformPlugin = (): CanvasPlugin => {
@@ -14,8 +21,6 @@ export const useTransformPlugin = (): CanvasPlugin => {
   const [startMouse, setStartMouse] = useState({ x: 0, y: 0 });
   const [initialHandleDist, setInitialHandleDist] = useState({ dx: 0, dy: 0 });
 
-  const VISUAL_PADDING = 0; // 零间距贴合
-  const HANDLE_RADIUS = 5;
   const SNAP_THRESHOLD = 5;
 
   const getSelectionAABB = (shapes: Shape[], ids: string[]) => {
@@ -48,7 +53,6 @@ export const useTransformPlugin = (): CanvasPlugin => {
     const map = new Map<string, ShapeSnapshot>();
     shapes.forEach(s => {
       if (targetIds.includes(s.id)) {
-        // 使用浅拷贝优化，性能更佳，仅在 commit 时生成完整快照
         map.set(s.id, { ...s });
       }
     });
@@ -61,12 +65,11 @@ export const useTransformPlugin = (): CanvasPlugin => {
 
     onMouseDown: (e, hit, ctx) => {
       const { selectedIds, shapes, zoom, editingId, activeTool } = ctx.state;
-      if (editingId || activeTool !== 'select') return false;
+      if (editingId || (activeTool !== 'select' && activeTool !== 'connect')) return false;
 
       const { x, y } = e;
       const threshold = 22 / zoom;
 
-      // 直线端点特殊处理
       if (selectedIds.length === 1) {
         const s = shapes.find(sh => sh.id === selectedIds[0]);
         if (s && s.type === 'line') {
@@ -90,10 +93,9 @@ export const useTransformPlugin = (): CanvasPlugin => {
         }
       }
 
-      // 缩放手柄点击检测
       const currentAABB = getSelectionAABB(shapes, selectedIds);
       if (currentAABB) {
-        const padding = VISUAL_PADDING / zoom;
+        const padding = THEME.padding / zoom;
         const handles: ResizeHandle[] = ['tl', 'tr', 'bl', 'br'];
         for (const h of handles) {
           let hx = 0, hy = 0, fx = 0, fy = 0;
@@ -114,7 +116,6 @@ export const useTransformPlugin = (): CanvasPlugin => {
         }
       }
 
-      // 点击移动
       if (hit) {
         let nextIds = [...selectedIds];
         if (!selectedIds.includes(hit.id)) {
@@ -136,7 +137,6 @@ export const useTransformPlugin = (): CanvasPlugin => {
 
       ctx.setState(prev => {
         let snapCorrection = { dx: 0, dy: 0 };
-        // 吸附逻辑
         if (type === 'MOVE' && selectedIds.length === 1 && activeHandle === null) {
           const activeId = selectedIds[0];
           const snap = snapshots.get(activeId);
@@ -170,7 +170,7 @@ export const useTransformPlugin = (): CanvasPlugin => {
             const curDX = x - fixedPoint.x, curDY = y - fixedPoint.y;
             let sx = Math.abs(initialHandleDist.dx) < 0.1 ? 1 : curDX / initialHandleDist.dx;
             let sy = Math.abs(initialHandleDist.dy) < 0.1 ? 1 : curDY / initialHandleDist.dy;
-            if (isShift || s.type === 'circle') { const sVal = Math.max(Math.abs(sx), Math.abs(sy)); sx = sVal * Math.sign(sx); sy = sVal * Math.sign(sy); }
+            if (isShift || s.type === 'circle' || s.type === 'icon') { const sVal = Math.max(Math.abs(sx), Math.abs(sy)); sx = sVal * Math.sign(sx); sy = sVal * Math.sign(sy); }
             const newW = Math.max(1, Math.abs(snap.width * sx)), newH = Math.max(1, Math.abs(snap.height * sy));
             const oldCx = snap.x + snap.width / 2, oldCy = snap.y + snap.height / 2;
             const newCx = fixedPoint.x + (oldCx - fixedPoint.x) * sx, newCy = fixedPoint.y + (oldCy - fixedPoint.y) * sy;
@@ -184,7 +184,6 @@ export const useTransformPlugin = (): CanvasPlugin => {
     },
 
     onTransformEnd: (e, ctx) => {
-      // 交互结束，提交一次历史记录
       ctx.setState(prev => ({ ...prev }), true);
       setSnapshots(new Map());
       setActiveHandle(null);
@@ -192,38 +191,54 @@ export const useTransformPlugin = (): CanvasPlugin => {
 
     onRenderForeground: (ctx) => {
       const { selectedIds, shapes, zoom, offset, editingId, activeTool } = ctx.state;
-      if (selectedIds.length === 0 || editingId || activeTool !== 'select' || !ctx.renderer) return;
+      if (selectedIds.length === 0 || editingId || (activeTool !== 'select' && activeTool !== 'connect') || !ctx.renderer) return;
+      
       const dpr = window.devicePixelRatio || 1, c = ctx.renderer.ctx, z = zoom;
       c.save();
       c.setTransform(dpr, 0, 0, dpr, 0, 0);
       c.translate(offset.x, offset.y);
       c.scale(z, z);
       
-      // 特殊处理直线渲染
       if (selectedIds.length === 1) {
         const s = shapes.find(sh => sh.id === selectedIds[0]);
         if (s && s.type === 'line') {
           const { start, end } = getLineEndPoints(s);
-          c.strokeStyle = '#6366f1'; c.fillStyle = '#ffffff'; c.lineWidth = 1.5 / z;
-          [start, end].forEach(p => { c.beginPath(); c.arc(p.x, p.y, HANDLE_RADIUS / z, 0, Math.PI * 2); c.fill(); c.stroke(); });
+          c.strokeStyle = THEME.accent; c.fillStyle = THEME.handleFill; c.lineWidth = 1.5 / z;
+          [start, end].forEach(p => { 
+            c.beginPath(); 
+            c.arc(p.x, p.y, THEME.handleSize / z, 0, Math.PI * 2); 
+            c.fill(); 
+            c.stroke(); 
+          });
           c.restore(); return;
         }
       }
 
       const aabb = getSelectionAABB(shapes, selectedIds);
       if (!aabb) { c.restore(); return; }
-      const p = VISUAL_PADDING / z;
-      c.strokeStyle = '#6366f1'; c.lineWidth = 1 / z; c.setLineDash([4 / z, 3 / z]);
-      c.strokeRect(aabb.x - p, aabb.y - p, aabb.w + 2 * p, aabb.h + 2 * p);
-      c.setLineDash([]);
       
-      // 渲染四个顶角手柄
+      const p = THEME.padding / z;
+      // Figma selection box
+      c.strokeStyle = THEME.accent;
+      c.lineWidth = 1.5 / z;
+      c.strokeRect(aabb.x - p, aabb.y - p, aabb.w + 2 * p, aabb.h + 2 * p);
+      
+      // Draw handles
       ['tl', 'tr', 'bl', 'br'].forEach(h => {
         let hx = 0, hy = 0;
         if (h.includes('l')) hx = aabb.x - p; else hx = aabb.x + aabb.w + p;
         if (h.includes('t')) hy = aabb.y - p; else hy = aabb.y + aabb.h + p;
-        c.fillStyle = '#ffffff'; c.strokeStyle = '#6366f1'; c.lineWidth = 1.5 / z;
-        c.beginPath(); c.arc(hx, hy, HANDLE_RADIUS / z, 0, Math.PI * 2); c.fill(); c.stroke();
+        
+        c.fillStyle = THEME.handleFill;
+        c.strokeStyle = THEME.accent;
+        c.lineWidth = 1.5 / z;
+        
+        // Square handles like Figma
+        const s = (THEME.handleSize * 1.2) / z;
+        c.beginPath();
+        c.rect(hx - s/2, hy - s/2, s, s);
+        c.fill();
+        c.stroke();
       });
       c.restore();
     }

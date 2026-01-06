@@ -3,6 +3,11 @@ import { CanvasPlugin, Shape, PluginContext } from '../types';
 import { useState, useRef, useEffect } from 'react';
 import { UIShape } from '../models/UIShape';
 
+const THEME = {
+  accent: '#18A0FB',
+  fill: 'rgba(24, 160, 251, 0.1)'
+};
+
 export const useSelectionPlugin = (): CanvasPlugin => {
   const [marquee, setMarquee] = useState<{ start: { x: number, y: number }, end: { x: number, y: number } } | null>(null);
   const lastScreenPos = useRef<{ x: number, y: number } | null>(null);
@@ -65,10 +70,10 @@ export const useSelectionPlugin = (): CanvasPlugin => {
 
     onMouseDown: (e, hit, ctx) => {
       ctxRef.current = ctx;
-      const isSelectTool = ctx.state.activeTool === 'select';
+      const isSelectOrConnect = ctx.state.activeTool === 'select' || ctx.state.activeTool === 'connect';
       const isLeftClick = (e.nativeEvent as MouseEvent).button === 0;
 
-      if (!hit && isSelectTool && isLeftClick) {
+      if (!hit && isSelectOrConnect && isLeftClick) {
         setMarquee({ start: { x: e.x, y: e.y }, end: { x: e.x, y: e.y } });
         ctx.setState(prev => ({ 
           ...prev, 
@@ -108,7 +113,6 @@ export const useSelectionPlugin = (): CanvasPlugin => {
         if (!isClick) {
           const inRect = ctx.state.shapes.filter(s => {
             if (s.locked || s.type === 'connection') return false;
-            // 统一使用 UIShape 获取 AABB 保证精准
             const b = UIShape.create(s).getAABB();
             return b.x < x2 && b.x + b.w > x1 && b.y < y2 && b.y + b.h > y1;
           }).map(s => s.id);
@@ -144,10 +148,9 @@ export const useSelectionPlugin = (): CanvasPlugin => {
       const w = Math.abs(marquee.end.x - marquee.start.x);
       const h = Math.abs(marquee.end.y - marquee.start.y);
 
-      c.strokeStyle = '#6366f1';
-      c.fillStyle = 'rgba(99, 102, 241, 0.08)';
+      c.strokeStyle = THEME.accent;
+      c.fillStyle = THEME.fill;
       c.lineWidth = 1 / zoom;
-      c.setLineDash([4 / zoom, 2 / zoom]);
       
       c.fillRect(x, y, w, h);
       c.strokeRect(x, y, w, h);

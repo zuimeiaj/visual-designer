@@ -3,9 +3,21 @@ export const en = {
   app: {
     title: "yoyo design",
     export: "Export",
+    exportImport: "Export / Import",
+    exportPNG: "Export PNG",
+    exportJPG: "Export JPG",
+    exportXML: "Project (.yoyo)",
+    exportSelection: "Export Selected (.yshape)",
+    importFile: "Import Project (.yoyo)",
+    importShapes: "Import Snippet (.yshape)",
     processing: "Processing...",
     welcome: "Welcome to yoyo design",
     doubleClickEdit: "Double click to edit",
+    layers: "Layers",
+    scenes: "Scenes",
+    addScene: "Add Scene",
+    defaultSceneName: "Scene",
+    noElements: "No elements on canvas"
   },
   tools: {
     select: "Select",
@@ -22,6 +34,7 @@ export const en = {
     connect: "Connect Tool",
     group: "Group",
     curve: "Curve",
+    layers: "Layers"
   },
   ai: {
     assistant: "AI Assistant",
@@ -53,6 +66,7 @@ export const en = {
     group: "Group",
     ungroup: "Ungroup",
     delete: "Delete",
+    exportSelected: "Export Selection",
   }
 };
 

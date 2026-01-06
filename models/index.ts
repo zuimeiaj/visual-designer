@@ -13,6 +13,7 @@ import "./LineShape";
 import "./PathShape";
 import "./CurveShape";
 import "./TableShape";
+import "./IconShape"; // Added
 import "./ConnectionShape";
 
 export * from "./Scene";

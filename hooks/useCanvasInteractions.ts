@@ -197,7 +197,7 @@ export const useCanvasInteractions = ({
       newWidth = Math.max(10, newWidth);
       newHeight = Math.max(10, newHeight);
 
-      if (shape.type === 'circle') {
+      if (shape.type === 'circle' || shape.type === 'icon') {
         const size = Math.max(newWidth, newHeight);
         newWidth = size;
         newHeight = size;

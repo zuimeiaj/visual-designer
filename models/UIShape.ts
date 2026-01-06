@@ -29,7 +29,6 @@ export abstract class UIShape {
   public points?: { x: number; y: number }[];
   public curvePoints?: CurvePoint[];
 
-  // 性能优化：缓存 AABB
   private _cachedAABB: { x: number, y: number, w: number, h: number } | null = null;
   private _lastAABBKey: string = '';
 
@@ -57,15 +56,12 @@ export abstract class UIShape {
   public static create(data: Shape): UIShape {
     const Constructor = this.registry.get(data.type);
     if (!Constructor) {
-      console.error(`UIShape: No constructor registered for type "${data.type}". Defaulting to Rect.`);
       const Rect = this.registry.get('rect');
       return Rect ? new Rect(data) : (null as any);
     }
     return new Constructor(data);
   }
 
-  public onCreated(): void {}
-  public onLayout(): void {}
   public onLayer(index: number): void { this.layer = index; }
 
   public transform(params: TransformParams): Partial<Shape> {
@@ -112,10 +108,7 @@ export abstract class UIShape {
 
   public getAABB(): { x: number, y: number, w: number, h: number } {
     const key = `${this.x},${this.y},${this.width},${this.height},${this.rotation}`;
-    if (this._cachedAABB && this._lastAABBKey === key) {
-      return this._cachedAABB;
-    }
-
+    if (this._cachedAABB && this._lastAABBKey === key) return this._cachedAABB;
     const corners = this.getCorners();
     const xs = corners.map(p => p.x);
     const ys = corners.map(p => p.y);
@@ -144,6 +137,5 @@ export abstract class UIShape {
 
   public update(data: Partial<Shape>): void {
     Object.assign(this, data);
-    // 更新数据时缓存失效不需要显式处理，getAABB 内部会通过 key 校验
   }
 }

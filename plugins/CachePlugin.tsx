@@ -8,9 +8,11 @@ export const useCachePlugin = (shapes: Shape[]): CanvasPlugin => {
   // Sync shapes to localStorage whenever they change
   useEffect(() => {
     try {
-      if (shapes && shapes.length > 0) {
+      if (!Array.isArray(shapes)) return;
+
+      if (shapes.length > 0) {
         localStorage.setItem(CACHE_KEY, JSON.stringify(shapes));
-      } else if (shapes && shapes.length === 0) {
+      } else {
         // We still save empty state if user deleted everything
         localStorage.setItem(CACHE_KEY, JSON.stringify([]));
       }
