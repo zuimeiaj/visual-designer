@@ -3,17 +3,12 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   CanvasPlugin, 
   PluginContext, 
-  Shape 
+  Shape,
+  TableData
 } from '../types';
 import { 
-  Layers, 
-  ArrowUp, 
-  ArrowDown, 
-  ChevronUp, 
-  ChevronDown, 
-  Group, 
-  Ungroup,
-  Trash2
+  Layers, ArrowUp, ArrowDown, ChevronUp, ChevronDown, 
+  Group, Ungroup, Trash2, Plus, Minus, Rows, Columns
 } from 'lucide-react';
 import { useTranslation } from '../lang/i18n';
 import { UIShape } from '../models/UIShape';
@@ -52,92 +47,102 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
     return parent ? getTopmostParentId(shapes, parent.id) : targetId;
   };
 
+  // --- 表格操作逻辑 ---
+  const updateTableData = (ctx: PluginContext, id: string, updater: (data: TableData) => TableData) => {
+    const shape = ctx.state.shapes.find(s => s.id === id);
+    if (!shape || !shape.tableData) return;
+    const dataCopy: TableData = JSON.parse(JSON.stringify(shape.tableData));
+    const newData = updater(dataCopy);
+    ctx.updateShape(id, { 
+      tableData: newData, 
+      width: newData.cols.reduce((a, b) => a + b, 0),
+      height: newData.rows.reduce((a, b) => a + b, 0)
+    });
+    ctx.setState(prev => ({ ...prev }), true);
+  };
+
+  const handleTableOp = (ctx: PluginContext, op: string) => {
+    const hit = ctx.state.shapes.find(s => s.id === ctx.state.editingId);
+    const cell = (ctx.state as any)._contextMenuCell; // 通过临时状态传递选中的单元格信息
+    if (!hit || !cell) return;
+
+    const { r, c } = cell;
+    if (op === 'ins-row-above') {
+      updateTableData(ctx, hit.id, data => {
+        data.rows.splice(r, 0, 30);
+        const newCells: any = {};
+        Object.entries(data.cells).forEach(([k, v]) => {
+          const [row, col] = k.split(',').map(Number);
+          if (row >= r) newCells[`${row+1},${col}`] = v; else newCells[k] = v;
+        });
+        data.cells = newCells; return data;
+      });
+    } else if (op === 'del-row') {
+      updateTableData(ctx, hit.id, data => {
+        if (data.rows.length <= 1) return data;
+        data.rows.splice(r, 1);
+        const newCells: any = {};
+        Object.entries(data.cells).forEach(([k, v]) => {
+          const [row, col] = k.split(',').map(Number);
+          if (row === r) return;
+          if (row > r) newCells[`${row-1},${col}`] = v; else newCells[k] = v;
+        });
+        data.cells = newCells; return data;
+      });
+    } else if (op === 'ins-col-left') {
+      updateTableData(ctx, hit.id, data => {
+        data.cols.splice(c, 0, 80);
+        const newCells: any = {};
+        Object.entries(data.cells).forEach(([k, v]) => {
+          const [row, col] = k.split(',').map(Number);
+          if (col >= c) newCells[`${row},${col+1}`] = v; else newCells[k] = v;
+        });
+        data.cells = newCells; return data;
+      });
+    } else if (op === 'del-col') {
+      updateTableData(ctx, hit.id, data => {
+        if (data.cols.length <= 1) return data;
+        data.cols.splice(c, 1);
+        const newCells: any = {};
+        Object.entries(data.cells).forEach(([k, v]) => {
+          const [row, col] = k.split(',').map(Number);
+          if (col === c) return;
+          if (col > c) newCells[`${row},${col-1}`] = v; else newCells[k] = v;
+        });
+        data.cells = newCells; return data;
+      });
+    }
+    closeMenu();
+  };
+
   const groupSelected = (ctx: PluginContext) => {
     const { selectedIds, shapes } = ctx.state;
     const topSelectedIds = Array.from(new Set(selectedIds.map(id => getTopmostParentId(shapes, id))));
     if (topSelectedIds.length < 2) return;
-
     const groupMembers = shapes.filter(s => topSelectedIds.includes(s.id));
     const remainingShapes = shapes.filter(s => !topSelectedIds.includes(s.id));
-
-    // Calculate strict bounding box for the group
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     groupMembers.forEach(s => {
       const b = UIShape.create(s).getAABB();
       minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
       maxX = Math.max(maxX, b.x + b.w); maxY = Math.max(maxY, b.y + b.h);
     });
-
-    const groupW = maxX - minX;
-    const groupH = maxY - minY;
-
-    // Convert child coordinates to be relative to the group's top-left corner
-    const relativeChildren = groupMembers.map(s => ({
-      ...s,
-      x: s.x - minX,
-      y: s.y - minY
-    }));
-
     const newGroup: Shape = {
       id: 'group-' + Math.random().toString(36).substr(2, 9),
-      type: 'group',
-      x: minX,
-      y: minY,
-      width: groupW,
-      height: groupH,
-      rotation: 0,
-      fill: 'transparent',
-      stroke: 'none',
-      strokeWidth: 0,
-      children: relativeChildren
+      type: 'group', x: minX, y: minY, width: maxX - minX, height: maxY - minY, rotation: 0, fill: 'transparent', stroke: 'none', strokeWidth: 0,
+      children: groupMembers.map(s => ({ ...s, x: s.x - minX, y: s.y - minY }))
     };
-
-    ctx.setState(prev => ({
-      ...prev,
-      shapes: [...remainingShapes, newGroup],
-      selectedIds: [newGroup.id]
-    }), true);
+    ctx.setState(prev => ({ ...prev, shapes: [...remainingShapes, newGroup], selectedIds: [newGroup.id] }), true);
     closeMenu();
   };
 
   const ungroupSelected = (ctx: PluginContext) => {
     const { selectedIds, shapes } = ctx.state;
     if (selectedIds.length !== 1) return;
-    const id = selectedIds[0];
-    const group = shapes.find(s => s.id === id);
+    const group = shapes.find(s => s.id === selectedIds[0]);
     if (!group || group.type !== 'group' || !group.children) return;
-
-    // Convert relative coordinates back to world coordinates
-    const absoluteChildren = group.children.map(c => ({
-      ...c,
-      x: c.x + group.x,
-      y: c.y + group.y
-    }));
-
-    const remainingShapes = shapes.filter(s => s.id !== id);
-    ctx.setState(prev => ({
-      ...prev,
-      shapes: [...remainingShapes, ...absoluteChildren],
-      selectedIds: absoluteChildren.map(s => s.id)
-    }), true);
-    closeMenu();
-  };
-
-  const reorder = (ctx: PluginContext, type: 'front' | 'back' | 'forward' | 'backward') => {
-    const { selectedIds, shapes } = ctx.state;
-    const topIds = Array.from(new Set(selectedIds.map(id => getTopmostParentId(shapes, id))));
-    let newShapes = [...shapes];
-    
-    if (type === 'front') {
-      const selected = newShapes.filter(s => topIds.includes(s.id));
-      const rest = newShapes.filter(s => !topIds.includes(s.id));
-      newShapes = [...rest, ...selected];
-    } else if (type === 'back') {
-      const selected = newShapes.filter(s => topIds.includes(s.id));
-      const rest = newShapes.filter(s => !topIds.includes(s.id));
-      newShapes = [...selected, ...rest];
-    }
-    ctx.setState(prev => ({ ...prev, shapes: newShapes }), true);
+    const absoluteChildren = group.children.map(c => ({ ...c, x: c.x + group.x, y: c.y + group.y }));
+    ctx.setState(prev => ({ ...prev, shapes: [...prev.shapes.filter(s => s.id !== group.id), ...absoluteChildren], selectedIds: absoluteChildren.map(s => s.id) }), true);
     closeMenu();
   };
 
@@ -147,11 +152,19 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
 
     onContextMenu: (e, hit, ctx) => {
       e.consume();
-      const { selectedIds, shapes } = ctx.state;
-      if (hit && !selectedIds.includes(hit.id)) {
-        const tid = getTopmostParentId(shapes, hit.id);
-        ctx.setState(prev => ({ ...prev, selectedIds: [tid] }), false);
+      const { selectedIds, shapes, editingId } = ctx.state;
+      const hitData = e.internalHit;
+
+      // 如果是在编辑表格单元格时右键
+      if (editingId && hitData?.id === editingId && hitData.type === 'cell') {
+        (ctx.state as any)._contextMenuCell = hitData.metadata;
+      } else {
+        delete (ctx.state as any)._contextMenuCell;
+        if (hit && !selectedIds.includes(hit.id)) {
+          ctx.setState(prev => ({ ...prev, selectedIds: [getTopmostParentId(shapes, hit.id)] }), false);
+        }
       }
+
       const mouseEvent = e.nativeEvent as MouseEvent;
       setMenu({ x: mouseEvent.clientX, y: mouseEvent.clientY, visible: true });
       return true;
@@ -159,10 +172,11 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
 
     onRenderOverlay: (ctx) => {
       if (!menu.visible) return null;
-      const { selectedIds, shapes } = ctx.state;
+      const { selectedIds, shapes, editingId } = ctx.state;
+      const cell = (ctx.state as any)._contextMenuCell;
       const hasSelection = selectedIds.length > 0;
-      const canGroup = Array.from(new Set(selectedIds.map(id => getTopmostParentId(shapes, id)))).length >= 2;
-      const canUngroup = selectedIds.length === 1 && shapes.find(s => s.id === selectedIds[0])?.type === 'group';
+      const editingShape = shapes.find(s => s.id === editingId);
+      const isTableEditing = editingShape?.type === 'table' && cell;
 
       return (
         <div 
@@ -170,27 +184,52 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
           style={{ left: menu.x, top: menu.y }}
           onMouseDown={e => e.stopPropagation()}
         >
+          {isTableEditing && (
+            <>
+              <div className="text-[10px] font-bold text-zinc-400 px-3 py-2 uppercase tracking-widest flex items-center gap-2 mb-1">
+                <Rows className="w-3 h-3" /> 表格行列操作
+              </div>
+              <MenuItem icon={<Plus className="w-4 h-4" />} label="在上方插入行" onClick={() => handleTableOp(ctx, 'ins-row-above')} />
+              <MenuItem icon={<Minus className="w-4 h-4" />} label="删除当前行" danger onClick={() => handleTableOp(ctx, 'del-row')} />
+              <MenuItem icon={<Plus className="w-4 h-4" />} label="在左侧插入列" onClick={() => handleTableOp(ctx, 'ins-col-left')} />
+              <MenuItem icon={<Minus className="w-4 h-4" />} label="删除当前列" danger onClick={() => handleTableOp(ctx, 'del-col')} />
+              <div className="h-[1px] bg-zinc-100 my-1.5 mx-2" />
+            </>
+          )}
+
           <div className="text-[10px] font-bold text-zinc-400 px-3 py-2 uppercase tracking-widest flex items-center gap-2 mb-1">
             <Layers className="w-3 h-3" /> {t('menu.layer')}
           </div>
-          <MenuItem icon={<ChevronUp className="w-4 h-4" />} label={t('menu.bringForward')} disabled={!hasSelection} onClick={() => reorder(ctx, 'forward')} />
-          <MenuItem icon={<ArrowUp className="w-4 h-4" />} label={t('menu.bringToFront')} disabled={!hasSelection} onClick={() => reorder(ctx, 'front')} />
-          <MenuItem icon={<ChevronDown className="w-4 h-4" />} label={t('menu.sendBackward')} disabled={!hasSelection} onClick={() => reorder(ctx, 'backward')} />
-          <MenuItem icon={<ArrowDown className="w-4 h-4" />} label={t('menu.sendToBack')} disabled={!hasSelection} onClick={() => reorder(ctx, 'back')} />
+          <MenuItem icon={<ChevronUp className="w-4 h-4" />} label={t('menu.bringForward')} disabled={!hasSelection} onClick={() => {
+            ctx.setState(prev => {
+              const idx = prev.shapes.findIndex(s => s.id === selectedIds[0]);
+              if (idx === -1 || idx === prev.shapes.length - 1) return prev;
+              const next = [...prev.shapes];
+              [next[idx], next[idx+1]] = [next[idx+1], next[idx]];
+              return { ...prev, shapes: next };
+            }, true);
+            closeMenu();
+          }} />
+          <MenuItem icon={<ArrowUp className="w-4 h-4" />} label={t('menu.bringToFront')} disabled={!hasSelection} onClick={() => {
+            ctx.setState(prev => {
+              const selected = prev.shapes.filter(s => selectedIds.includes(s.id));
+              const rest = prev.shapes.filter(s => !selectedIds.includes(s.id));
+              return { ...prev, shapes: [...rest, ...selected] };
+            }, true);
+            closeMenu();
+          }} />
+          
           <div className="h-[1px] bg-zinc-100 my-1.5 mx-2" />
-          {canUngroup ? (
+          
+          {selectedIds.length === 1 && shapes.find(s => s.id === selectedIds[0])?.type === 'group' ? (
             <MenuItem icon={<Ungroup className="w-4 h-4" />} label={t('menu.ungroup')} onClick={() => ungroupSelected(ctx)} />
           ) : (
-            <MenuItem icon={<Group className="w-4 h-4" />} label={t('menu.group')} disabled={!canGroup} onClick={() => groupSelected(ctx)} />
+            <MenuItem icon={<Group className="w-4 h-4" />} label={t('menu.group')} disabled={selectedIds.length < 2} onClick={() => groupSelected(ctx)} />
           )}
+
           <div className="h-[1px] bg-zinc-100 my-1.5 mx-2" />
           <MenuItem icon={<Trash2 className="w-4 h-4" />} label={t('menu.delete')} danger disabled={!hasSelection} onClick={() => {
-            const topSelectedIds = Array.from(new Set(selectedIds.map(id => getTopmostParentId(shapes, id))));
-            ctx.setState(prev => ({ 
-              ...prev, 
-              shapes: prev.shapes.filter(s => !topSelectedIds.includes(s.id)), 
-              selectedIds: [] 
-            }), true);
+            ctx.setState(prev => ({ ...prev, shapes: prev.shapes.filter(s => !selectedIds.includes(s.id)), selectedIds: [] }), true);
             closeMenu();
           }} />
         </div>

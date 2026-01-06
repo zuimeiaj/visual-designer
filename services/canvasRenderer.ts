@@ -11,6 +11,7 @@ export class CanvasRenderer {
 
   public render(state: CanvasState, scene: Scene, plugins: CanvasPlugin[], pluginCtx: PluginContext) {
     const dpr = window.devicePixelRatio || 1;
+    const canvas = this.ctx.canvas;
     
     // 1. 完全重置并清除画布（填充白色）
     this.clear();
@@ -18,30 +19,36 @@ export class CanvasRenderer {
     // 2. 渲染背景层插件
     plugins.forEach(p => p.onRenderBackground?.(pluginCtx));
 
-    // 3. 进入主内容坐标系
+    // 3. 计算可见视口 AABB (世界坐标系)
+    // 逻辑：视口矩形在世界坐标系中的范围
+    const viewport = {
+      x: -state.offset.x / state.zoom,
+      y: -state.offset.y / state.zoom,
+      w: (canvas.width / dpr) / state.zoom,
+      h: (canvas.height / dpr) / state.zoom
+    };
+
+    // 4. 进入主内容坐标系
     this.ctx.save();
     this.applyTransform(state, dpr);
     
-    // 4. 渲染图形内容
-    scene.render(this.ctx, state);
+    // 5. 渲染图形内容 (带裁剪)
+    scene.render(this.ctx, state, viewport);
     
     this.ctx.restore();
 
-    // 5. 渲染前景层插件
+    // 6. 渲染前景层插件
     plugins.forEach(p => p.onRenderForeground?.(pluginCtx));
   }
 
   private clear() {
     const canvas = this.ctx.canvas;
-    // 使用 resetTransform 确保彻底回到初始状态
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
-    // 显式填充白色，解决 alpha: false 导致的初始黑色背景问题
     this.ctx.fillStyle = '#ffffff';
     this.ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
 
   private applyTransform(state: CanvasState, dpr: number) {
-    // 核心顺序：物理缩放 -> 全局平移 -> 全局缩放
     this.ctx.scale(dpr, dpr);
     this.ctx.translate(state.offset.x, state.offset.y);
     this.ctx.scale(state.zoom, state.zoom);

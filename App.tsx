@@ -35,25 +35,49 @@ const MainApp: React.FC = () => {
     try {
       const saved = localStorage.getItem(CACHE_KEY);
       if (saved) {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.length > 0) return parsed;
       }
     } catch (e) {
       console.error('Failed to load cached shapes:', e);
     }
     
-    return [
-      { id: '1', type: 'rect', x: 100, y: 100, width: 200, height: 150, rotation: 0, fill: '#3b82f6', stroke: '#2563eb', strokeWidth: 2 },
-      { id: '2', type: 'circle', x: 400, y: 200, width: 100, height: 100, rotation: 0, fill: '#22c55e', stroke: '#16a34a', strokeWidth: 2 },
-      { id: '3', type: 'text', x: 100, y: 300, width: 300, height: 50, rotation: 0, fill: '#18181b', stroke: 'none', strokeWidth: 0, text: t('app.welcome'), fontSize: 24 }
-    ];
-  }, [t]);
+    // 性能压力测试：生成 1000 个随机图形
+    const stressTestShapes: Shape[] = [];
+    const types: ShapeType[] = ['rect', 'circle', 'diamond', 'line', 'text'];
+    const colors = ['#4f46e5', '#22c55e', '#ef4444', '#f59e0b', '#06b6d4', '#8b5cf6', '#ec4899'];
+    
+    for (let i = 0; i < 1000; i++) {
+      const type = types[Math.floor(Math.random() * types.length)];
+      const x = Math.random() * 5000 - 2500;
+      const y = Math.random() * 5000 - 2500;
+      const size = 40 + Math.random() * 100;
+      
+      stressTestShapes.push({
+        id: `stress-${i}`,
+        type,
+        x,
+        y,
+        width: type === 'line' ? size * 1.5 : size,
+        height: type === 'line' ? 2 : (type === 'text' ? 40 : size),
+        rotation: Math.random() * Math.PI * 2,
+        fill: colors[Math.floor(Math.random() * colors.length)],
+        stroke: '#3f3f46',
+        strokeWidth: 1,
+        text: type === 'text' ? `Shape ${i}` : undefined,
+        fontSize: type === 'text' ? 14 : undefined
+      });
+    }
+    
+    return stressTestShapes;
+  }, []);
 
   const initialState: CanvasState = useMemo(() => ({
     shapes: getInitialShapes(),
     selectedIds: [],
     editingId: null,
-    zoom: 1,
-    offset: { x: 0, y: 0 },
+    zoom: 0.5, // 初始缩放设小一点，以便看到更多图形
+    offset: { x: window.innerWidth / 2, y: window.innerHeight / 2 },
     activeTool: 'select',
     interactionState: 'IDLE'
   }), [getInitialShapes]);
@@ -121,7 +145,7 @@ const MainApp: React.FC = () => {
       shapes: [...prev.shapes, newShape],
       selectedIds: [newShape.id],
       activeTool: 'select'
-    }));
+    }), true);
   }, [state.offset, state.zoom, t, setState]);
 
   const toggleTool = (tool: ShapeType | 'select' | 'connect') => {
@@ -135,15 +159,15 @@ const MainApp: React.FC = () => {
         ...prev,
         shapes: prev.shapes.filter(s => !topIdsToRemove.includes(s.id)),
         selectedIds: []
-      }));
+      }), true);
     }
   }, [state.selectedIds, state.shapes, setState, getTopmostParentId]);
 
-  const updateShape = useCallback((id: string, updates: Partial<Shape>) => {
+  const updateShape = useCallback((id: string, updates: Partial<Shape>, save: boolean = false) => {
     setState(prev => ({
       ...prev,
       shapes: prev.shapes.map(s => s.id === id ? { ...s, ...updates } : s)
-    }), false);
+    }), save);
   }, [setState]);
 
   const handleExport = useCallback(() => {
@@ -227,6 +251,9 @@ const MainApp: React.FC = () => {
             <div className="flex items-center gap-2 text-zinc-400 shrink-0">
                <span className="text-[10px] font-mono font-bold whitespace-nowrap">{Math.round(state.zoom * 100)}%</span>
             </div>
+            <div className="hidden sm:flex items-center ml-4 px-2 py-1 bg-zinc-100 rounded-md">
+              <span className="text-[10px] font-bold text-zinc-400">FPS: <span id="fps-counter">--</span></span>
+            </div>
           </div>
 
           {/* 中间 */}
@@ -234,7 +261,7 @@ const MainApp: React.FC = () => {
             {selectedShape ? (
               <Toolbar 
                 selectedShape={selectedShape}
-                onUpdate={(u) => updateShape(selectedShape.id, u)}
+                onUpdate={(u, save) => updateShape(selectedShape.id, u, save)}
               />
             ) : (
               <div className="text-[10px] font-medium text-zinc-300 uppercase tracking-widest animate-in fade-in duration-500 whitespace-nowrap">
@@ -245,6 +272,15 @@ const MainApp: React.FC = () => {
 
           {/* 右端 */}
           <div className="flex-1 flex items-center justify-end gap-3 min-w-0">
+            <button 
+              onClick={() => {
+                localStorage.removeItem(CACHE_KEY);
+                window.location.reload();
+              }} 
+              className="px-3 py-1.5 hover:bg-zinc-100 rounded-lg text-[10px] font-bold text-zinc-500 hover:text-red-600 uppercase transition-all whitespace-nowrap"
+            >
+              Reset Test
+            </button>
             <button 
               onClick={() => setLanguage(language === 'en' ? 'zh' : 'en')} 
               className="flex items-center gap-1.5 px-3 py-1.5 hover:bg-zinc-100 rounded-lg text-[10px] font-bold text-zinc-500 hover:text-indigo-600 uppercase transition-all whitespace-nowrap"

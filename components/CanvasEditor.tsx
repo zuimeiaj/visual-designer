@@ -25,6 +25,8 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
   const lastMousePos = useRef({ x: 0, y: 0 });
   const startMousePos = useRef({ x: 0, y: 0 });
 
+  const fpsRef = useRef({ lastTime: performance.now(), frames: 0 });
+
   useEffect(() => {
     state.shapes.forEach(s => {
       const existing = scene.getShapes().find(os => os.id === s.id);
@@ -114,8 +116,45 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
     }
   };
 
+  // --- 彻底缩放锁定的核心逻辑 ---
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const handleNativeWheel = (e: WheelEvent) => {
+      // 拦截所有尝试触发浏览器缩放的操作
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault(); 
+      }
+      
+      const base = createBaseEvent(e);
+      const viewEvent: ViewEvent = { ...base, zoom: state.zoom, offset: state.offset };
+      for (const p of sortedPlugins) {
+        p.onViewChange?.(viewEvent, pluginCtx);
+        if (viewEvent.consumed) break;
+      }
+    };
+
+    const handleGesture = (e: any) => {
+      e.preventDefault(); // 针对 macOS/iPad 触控板缩放手势的底层拦截
+    };
+
+    // 使用原生监听器并关闭 passive 模式
+    canvas.addEventListener('wheel', handleNativeWheel, { passive: false });
+    canvas.addEventListener('gesturestart', handleGesture, { passive: false });
+    canvas.addEventListener('gesturechange', handleGesture, { passive: false });
+    canvas.addEventListener('gestureend', handleGesture, { passive: false });
+
+    return () => {
+      canvas.removeEventListener('wheel', handleNativeWheel);
+      canvas.removeEventListener('gesturestart', handleGesture);
+      canvas.removeEventListener('gesturechange', handleGesture);
+      canvas.removeEventListener('gestureend', handleGesture);
+    };
+  }, [sortedPlugins, pluginCtx, state.zoom, state.offset]);
+
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 2) return; // 右键由 onContextMenu 处理
+    if (e.button === 2) return; 
 
     const base = createBaseEvent(e);
     lastMousePos.current = { x: base.x, y: base.y };
@@ -228,19 +267,6 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
     }
   };
 
-  const handleWheel = (e: React.WheelEvent) => {
-    const base = createBaseEvent(e);
-    const viewEvent: ViewEvent = {
-      ...base,
-      zoom: state.zoom,
-      offset: state.offset
-    };
-    for (const p of sortedPlugins) {
-      p.onViewChange?.(viewEvent, pluginCtx);
-      if (viewEvent.consumed) break;
-    }
-  };
-
   const handleDoubleClick = (e: React.MouseEvent) => {
     const base = createBaseEvent(e);
     const hit = scene.hitTest(base.x, base.y);
@@ -278,6 +304,17 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
 
   const draw = useCallback(() => {
     if (!rendererRef.current) return;
+    
+    const now = performance.now();
+    fpsRef.current.frames++;
+    if (now > fpsRef.current.lastTime + 1000) {
+      const fps = Math.round((fpsRef.current.frames * 1000) / (now - fpsRef.current.lastTime));
+      const el = document.getElementById('fps-counter');
+      if (el) el.innerText = fps.toString();
+      fpsRef.current.frames = 0;
+      fpsRef.current.lastTime = now;
+    }
+
     rendererRef.current.render(state, scene, sortedPlugins, pluginCtx);
   }, [state, scene, sortedPlugins, pluginCtx]);
 
@@ -319,7 +356,6 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
         onMouseDown={handleMouseDown} 
         onMouseMove={handleMouseMove} 
         onMouseUp={handleMouseUp} 
-        onWheel={handleWheel}
         onDoubleClick={handleDoubleClick} 
         onContextMenu={handleContextMenu} 
         className="block outline-none" 

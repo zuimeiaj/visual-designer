@@ -29,6 +29,10 @@ export abstract class UIShape {
   public points?: { x: number; y: number }[];
   public curvePoints?: CurvePoint[];
 
+  // 性能优化：缓存 AABB
+  private _cachedAABB: { x: number, y: number, w: number, h: number } | null = null;
+  private _lastAABBKey: string = '';
+
   private static registry = new Map<string, UIShapeConstructor>();
 
   constructor(data: Shape) {
@@ -76,10 +80,7 @@ export abstract class UIShape {
 
   public draw(ctx: CanvasRenderingContext2D, zoom: number, isEditing: boolean = false): void {
     ctx.save();
-    // 1. Move to the shape's position
     ctx.translate(this.x, this.y);
-    
-    // 2. Handle rotation around the center of the shape
     if (this.rotation !== 0) {
       const cx = this.width / 2;
       const cy = this.height / 2;
@@ -87,8 +88,6 @@ export abstract class UIShape {
       ctx.rotate(this.rotation);
       ctx.translate(-cx, -cy);
     }
-
-    // 3. Subclasses now draw relative to (0, 0)
     this.onDraw(ctx, zoom, isEditing);
     ctx.restore();
   }
@@ -112,11 +111,18 @@ export abstract class UIShape {
   }
 
   public getAABB(): { x: number, y: number, w: number, h: number } {
+    const key = `${this.x},${this.y},${this.width},${this.height},${this.rotation}`;
+    if (this._cachedAABB && this._lastAABBKey === key) {
+      return this._cachedAABB;
+    }
+
     const corners = this.getCorners();
     const xs = corners.map(p => p.x);
     const ys = corners.map(p => p.y);
     const minX = Math.min(...xs), minY = Math.min(...ys);
-    return { x: minX, y: minY, w: Math.max(...xs) - minX, h: Math.max(...ys) - minY };
+    this._cachedAABB = { x: minX, y: minY, w: Math.max(...xs) - minX, h: Math.max(...ys) - minY };
+    this._lastAABBKey = key;
+    return this._cachedAABB;
   }
 
   public hitTest(px: number, py: number): boolean {
@@ -126,7 +132,6 @@ export abstract class UIShape {
     const cos = Math.cos(-this.rotation), sin = Math.sin(-this.rotation);
     const lx = dx * cos - dy * sin + this.width / 2;
     const ly = dx * sin + dy * cos + this.height / 2;
-    
     const padding = (this.type === 'line' || this.type === 'path' || this.type === 'curve') ? 10 : 0;
     return lx >= 0 - padding && lx <= this.width + padding && 
            ly >= 0 - padding && ly <= this.height + padding;
@@ -139,5 +144,6 @@ export abstract class UIShape {
 
   public update(data: Partial<Shape>): void {
     Object.assign(this, data);
+    // 更新数据时缓存失效不需要显式处理，getAABB 内部会通过 key 校验
   }
 }

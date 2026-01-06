@@ -6,7 +6,7 @@ import { useTranslation } from '../lang/i18n';
 
 interface Props {
   selectedShape?: Shape;
-  onUpdate: (updates: Partial<Shape>) => void;
+  onUpdate: (updates: Partial<Shape>, save?: boolean) => void;
 }
 
 const Toolbar: React.FC<Props> = ({ selectedShape, onUpdate }) => {
@@ -22,9 +22,9 @@ const Toolbar: React.FC<Props> = ({ selectedShape, onUpdate }) => {
     { value: 'right', icon: AlignRight },
   ];
 
-  const handleRotationChange = (val: string) => {
+  const handleRotationChange = (val: string, commit: boolean = false) => {
     const degrees = parseInt(val) || 0;
-    onUpdate({ rotation: (degrees * Math.PI) / 180 });
+    onUpdate({ rotation: (degrees * Math.PI) / 180 }, commit);
   };
 
   const currentRotationDegrees = Math.round(((selectedShape.rotation || 0) * 180) / Math.PI);
@@ -40,7 +40,8 @@ const Toolbar: React.FC<Props> = ({ selectedShape, onUpdate }) => {
               type="color" 
               className="absolute opacity-0 w-0 h-0" 
               value={selectedShape.fill === 'transparent' ? '#ffffff' : selectedShape.fill} 
-              onChange={(e) => onUpdate({ fill: e.target.value })}
+              onInput={(e: any) => onUpdate({ fill: e.target.value }, false)}
+              onChange={(e: any) => onUpdate({ fill: e.target.value }, true)}
             />
           </label>
           <label className="p-1.5 hover:bg-zinc-100 rounded-lg transition-colors cursor-pointer group relative" title="Stroke Color">
@@ -49,7 +50,8 @@ const Toolbar: React.FC<Props> = ({ selectedShape, onUpdate }) => {
               type="color" 
               className="absolute opacity-0 w-0 h-0" 
               value={selectedShape.stroke === 'none' ? '#3f3f46' : selectedShape.stroke} 
-              onChange={(e) => onUpdate({ stroke: e.target.value })}
+              onInput={(e: any) => onUpdate({ stroke: e.target.value }, false)}
+              onChange={(e: any) => onUpdate({ stroke: e.target.value }, true)}
             />
           </label>
         </div>
@@ -64,7 +66,8 @@ const Toolbar: React.FC<Props> = ({ selectedShape, onUpdate }) => {
               type="color" 
               className="absolute opacity-0 w-0 h-0" 
               value={isPureText ? selectedShape.fill : (selectedShape.textColor || '#000000')} 
-              onChange={(e) => onUpdate(isPureText ? { fill: e.target.value } : { textColor: e.target.value })}
+              onInput={(e: any) => onUpdate(isPureText ? { fill: e.target.value } : { textColor: e.target.value }, false)}
+              onChange={(e: any) => onUpdate(isPureText ? { fill: e.target.value } : { textColor: e.target.value }, true)}
             />
           </label>
 
@@ -73,7 +76,7 @@ const Toolbar: React.FC<Props> = ({ selectedShape, onUpdate }) => {
               {alignments.map(({ value, icon: Icon }) => (
                 <button
                   key={value}
-                  onClick={() => onUpdate({ textAlign: value })}
+                  onClick={() => onUpdate({ textAlign: value }, true)}
                   className={`p-1 rounded-md transition-all ${selectedShape.textAlign === value || (!selectedShape.textAlign && value === (isPureText ? 'left' : 'center')) ? 'bg-white shadow-sm text-indigo-600' : 'text-zinc-400 hover:text-zinc-600'}`}
                 >
                   <Icon className="w-3 h-3" />
@@ -86,7 +89,9 @@ const Toolbar: React.FC<Props> = ({ selectedShape, onUpdate }) => {
              <input 
                 type="number" 
                 value={Math.round(selectedShape.fontSize || 14)} 
-                onChange={(e) => onUpdate({ fontSize: Math.max(8, Number(e.target.value)) })}
+                onChange={(e) => onUpdate({ fontSize: Math.max(8, Number(e.target.value)) }, false)}
+                onBlur={(e) => onUpdate({ fontSize: Math.max(8, Number(e.target.value)) }, true)}
+                onKeyDown={(e) => e.key === 'Enter' && (e.currentTarget.blur())}
                 className="w-8 bg-transparent text-[10px] text-zinc-700 border-none outline-none focus:text-indigo-600 font-bold"
              />
              <span className="text-[8px] text-zinc-300 font-bold">PX</span>
@@ -101,7 +106,9 @@ const Toolbar: React.FC<Props> = ({ selectedShape, onUpdate }) => {
           <input 
             type="number" 
             value={Math.round(selectedShape.width)} 
-            onChange={(e) => onUpdate({ width: Math.max(1, Number(e.target.value)) })}
+            onChange={(e) => onUpdate({ width: Math.max(1, Number(e.target.value)) }, false)}
+            onBlur={(e) => onUpdate({ width: Math.max(1, Number(e.target.value)) }, true)}
+            onKeyDown={(e) => e.key === 'Enter' && (e.currentTarget.blur())}
             className="w-10 bg-transparent text-[10px] text-zinc-700 border-none outline-none focus:text-indigo-600 font-bold"
           />
         </div>
@@ -110,7 +117,9 @@ const Toolbar: React.FC<Props> = ({ selectedShape, onUpdate }) => {
           <input 
             type="number" 
             value={Math.round(selectedShape.height)} 
-            onChange={(e) => onUpdate({ height: Math.max(1, Number(e.target.value)) })}
+            onChange={(e) => onUpdate({ height: Math.max(1, Number(e.target.value)) }, false)}
+            onBlur={(e) => onUpdate({ height: Math.max(1, Number(e.target.value)) }, true)}
+            onKeyDown={(e) => e.key === 'Enter' && (e.currentTarget.blur())}
             className="w-10 bg-transparent text-[10px] text-zinc-700 border-none outline-none focus:text-indigo-600 font-bold"
           />
         </div>
@@ -120,7 +129,9 @@ const Toolbar: React.FC<Props> = ({ selectedShape, onUpdate }) => {
           <input 
             type="number" 
             value={currentRotationDegrees} 
-            onChange={(e) => handleRotationChange(e.target.value)}
+            onChange={(e) => handleRotationChange(e.target.value, false)}
+            onBlur={(e) => handleRotationChange(e.target.value, true)}
+            onKeyDown={(e) => e.key === 'Enter' && (e.currentTarget.blur())}
             className="w-10 bg-transparent text-[10px] text-zinc-700 border-none outline-none focus:text-indigo-600 font-bold"
           />
           <span className="text-[8px] font-black text-zinc-300 uppercase">°</span>

@@ -10,12 +10,10 @@ export class Scene {
     initialShapes.forEach(s => this.add(s));
   }
 
-  // Returns all UI shapes currently in the scene.
   public getShapes(): UIShape[] {
     return this.shapes;
   }
 
-  // Adds a new shape to the scene.
   public add(data: Shape): UIShape {
     const uiShape = UIShape.create(data);
     this.shapes.push(uiShape);
@@ -23,15 +21,12 @@ export class Scene {
     return uiShape;
   }
 
-  // Removes a shape from the scene by ID.
   public remove(id: string): void {
     this.shapes = this.shapes.filter(s => s.id !== id);
     this.processLifecycle();
   }
 
-  // Performs hit testing at coordinates (x, y) returning the topmost shape.
   public hitTest(x: number, y: number): UIShape | null {
-    // Iterate backwards to hit the top-most shape first (standard z-index behavior)
     for (let i = this.shapes.length - 1; i >= 0; i--) {
       if (this.shapes[i].hitTest(x, y)) {
         return this.shapes[i];
@@ -40,9 +35,26 @@ export class Scene {
     return null;
   }
 
-  // Renders the scene's contents.
-  public render(ctx: CanvasRenderingContext2D, state: CanvasState): void {
+  /**
+   * 渲染场景
+   * @param viewport 可选的视口裁剪范围 {x, y, w, h} (世界坐标)
+   */
+  public render(ctx: CanvasRenderingContext2D, state: CanvasState, viewport?: { x: number, y: number, w: number, h: number }): void {
+    const padding = 20; // 裁剪边距，防止边缘闪烁
+    
     this.shapes.forEach((shape) => {
+      // 视口裁剪逻辑
+      if (viewport && !(shape instanceof ConnectionShape)) {
+        const aabb = shape.getAABB();
+        const isVisible = !(
+          aabb.x + aabb.w < viewport.x - padding ||
+          aabb.x > viewport.x + viewport.w + padding ||
+          aabb.y + aabb.h < viewport.y - padding ||
+          aabb.y > viewport.y + viewport.h + padding
+        );
+        if (!isVisible) return;
+      }
+
       if (shape instanceof ConnectionShape) {
         shape.drawWithScene(ctx, this, state);
       } else {
@@ -51,7 +63,6 @@ export class Scene {
     });
   }
 
-  // Internal lifecycle updates for layers and order.
   private processLifecycle(): void {
     this.shapes.forEach((s, i) => s.onLayer(i));
   }

@@ -29,7 +29,7 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
   const [snapshots, setSnapshots] = useState<ShapeSnapshot[]>([]);
   const [initialRect, setInitialRect] = useState<{ x: number, y: number, w: number, h: number } | null>(null);
 
-  const VISUAL_PADDING = 8;
+  const VISUAL_PADDING = 0; // 已调整为 0
   const HANDLE_RADIUS = 4;
 
   const getMultiAABB = (shapes: Shape[], ids: string[]) => {
@@ -96,7 +96,6 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
         ctx.setState(prev => ({ ...prev, interactionState: 'TRANSFORMING' }), false);
       };
 
-      // 1. Rotation handle check
       const rotPos = { x: pivot.x, y: rect.y - p - 30 / zoom };
       if (Math.hypot(x - rotPos.x, y - rotPos.y) < threshold) {
         prepareDrag('rotate');
@@ -104,7 +103,6 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
         return true;
       }
 
-      // 2. Corner handles check
       const corners: ResizeHandle[] = ['tl', 'tr', 'bl', 'br'];
       for (const h of corners) {
         let hx = 0, hy = 0, fx = 0, fy = 0;
@@ -120,7 +118,6 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
         }
       }
 
-      // 3. Move check
       if (hit && selectedIds.includes(hit.id)) {
         prepareDrag('move');
         e.consume();
@@ -217,7 +214,6 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
       c.translate(offset.x, offset.y);
       c.scale(z, z);
       
-      // If transforming, apply group-level visual feedback
       if (dragMode === 'rotate') {
         c.translate(pivotPoint.x, pivotPoint.y);
         c.rotate(visualRotation);
@@ -228,22 +224,18 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
         c.translate(-fixedPoint.x, -fixedPoint.y);
       }
       
-      // Draw primary dashed border
       c.strokeStyle = '#6366f1'; 
       c.lineWidth = 1 / z;
       c.setLineDash([4 / z, 2 / z]); 
       c.strokeRect(rect.x - p, rect.y - p, rect.w + 2 * p, rect.h + 2 * p);
       c.setLineDash([]);
       
-      // Draw handles if not currently dragging (or if rotating to show pivot)
       if (!dragMode) {
-        // Rotation handle stem
         c.beginPath();
         c.moveTo(rect.x + rect.w / 2, rect.y - p);
         c.lineTo(rect.x + rect.w / 2, rect.y - p - 30 / z);
         c.stroke();
 
-        // Rotation dot
         c.fillStyle = '#ffffff';
         c.lineWidth = 1.5 / z;
         c.beginPath();
@@ -251,7 +243,6 @@ export const useGroupTransformPlugin = (): CanvasPlugin => {
         c.fill();
         c.stroke();
 
-        // Corner dots
         const handles = ['tl', 'tr', 'bl', 'br'];
         handles.forEach(h => {
           let hx = 0, hy = 0;
