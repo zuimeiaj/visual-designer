@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { 
   Square, Circle as CircleIcon, Type as TypeIcon, Image as ImageIcon, Minus,
@@ -87,6 +88,11 @@ const MainApp: React.FC = () => {
     connectionPlugin
   ], [textPlugin, transformPlugin, selectionPlugin, rulerPlugin, smartGuidesPlugin, contextMenuPlugin, penPlugin, imagePlugin, cachePlugin, tablePlugin, shortcutPlugin, connectionPlugin]);
 
+  const getTopmostParentId = useCallback((shapes: Shape[], targetId: string): string => {
+    const parent = shapes.find(s => s.children?.some(c => c.id === targetId));
+    return parent ? getTopmostParentId(shapes, parent.id) : targetId;
+  }, []);
+
   const addShape = useCallback((type: ShapeType) => {
     const defaultTableData: TableData = {
       rows: [30, 30, 30, 30, 30],
@@ -124,13 +130,14 @@ const MainApp: React.FC = () => {
 
   const deleteSelected = useCallback(() => {
     if (state.selectedIds.length > 0) {
+      const topIdsToRemove = Array.from(new Set(state.selectedIds.map(id => getTopmostParentId(state.shapes, id))));
       setState(prev => ({
         ...prev,
-        shapes: prev.shapes.filter(s => !prev.selectedIds.includes(s.id)),
+        shapes: prev.shapes.filter(s => !topIdsToRemove.includes(s.id)),
         selectedIds: []
       }));
     }
-  }, [state.selectedIds, setState]);
+  }, [state.selectedIds, state.shapes, setState, getTopmostParentId]);
 
   const updateShape = useCallback((id: string, updates: Partial<Shape>) => {
     setState(prev => ({

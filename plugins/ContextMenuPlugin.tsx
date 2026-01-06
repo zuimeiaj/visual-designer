@@ -60,6 +60,7 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
     const groupMembers = shapes.filter(s => topSelectedIds.includes(s.id));
     const remainingShapes = shapes.filter(s => !topSelectedIds.includes(s.id));
 
+    // Calculate strict bounding box for the group
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     groupMembers.forEach(s => {
       const b = UIShape.create(s).getAABB();
@@ -70,16 +71,12 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
     const groupW = maxX - minX;
     const groupH = maxY - minY;
 
-    // Convert child coordinates to be relative to the group's top-left
-    const relativeChildren = groupMembers.map(s => {
-      // Calculate world pos if it was previously relative (nested groups)
-      // For top-level grouping, it's just s.x - minX
-      return {
-        ...s,
-        x: s.x - minX,
-        y: s.y - minY
-      };
-    });
+    // Convert child coordinates to be relative to the group's top-left corner
+    const relativeChildren = groupMembers.map(s => ({
+      ...s,
+      x: s.x - minX,
+      y: s.y - minY
+    }));
 
     const newGroup: Shape = {
       id: 'group-' + Math.random().toString(36).substr(2, 9),

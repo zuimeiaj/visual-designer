@@ -52,7 +52,9 @@ export class GroupShape extends UIShape {
   }
 
   public onDraw(ctx: CanvasRenderingContext2D, zoom: number, isEditing: boolean): void {
-    // Context is already at Group's top-left thanks to UIShape.draw refactor
+    // The base UIShape.draw has already translated the context to (this.x, this.y)
+    // and applied rotation. Subclasses draw relative to (0,0).
+    // For groups, children are positioned relative to (0,0).
     this.children.forEach(child => {
       child.draw(ctx, zoom, isEditing);
     });
