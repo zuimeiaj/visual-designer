@@ -186,10 +186,10 @@ const MainApp: React.FC = () => {
 
   return (
     <div className="flex h-screen w-screen bg-zinc-50 text-zinc-900 font-inter select-none overflow-hidden">
-      {/* 侧边工具栏 - 保持精简 */}
-      <div className="flex flex-col border-r border-zinc-200 bg-white w-16 items-center py-4 gap-6 z-20 shadow-sm shrink-0">
-        <div className="p-2 bg-indigo-600 rounded-lg shadow-lg shadow-indigo-500/20"><Zap className="w-5 h-6 text-white" /></div>
-        <div className="flex flex-col gap-1.5">
+      {/* 侧边工具栏 */}
+      <div className="flex flex-col border-r border-zinc-200 bg-white w-16 items-center py-4 gap-6 z-20 shadow-sm shrink-0 overflow-y-auto overflow-x-hidden no-scrollbar">
+        <div className="p-2 bg-indigo-600 rounded-lg shadow-lg shadow-indigo-500/20 shrink-0"><Zap className="w-5 h-6 text-white" /></div>
+        <div className="flex flex-col gap-1.5 shrink-0">
           <ToolButton active={state.activeTool === 'select'} onClick={() => toggleTool('select')} icon={<MousePointer2 className="w-5 h-5" />} label={t('tools.select')} />
           <ToolButton active={state.activeTool === 'connect'} onClick={() => toggleTool('connect')} icon={<Share2 className="w-5 h-5" />} label={t('tools.connect')} />
           <ToolButton active={state.activeTool === 'curve'} onClick={() => toggleTool('curve')} icon={<PenTool className="w-5 h-5" />} label={t('tools.pen')} />
@@ -202,59 +202,60 @@ const MainApp: React.FC = () => {
           <ToolButton active={false} onClick={() => addShape('image')} icon={<ImageIcon className="w-5 h-5" />} label={t('tools.image')} />
           <ToolButton active={false} onClick={() => addShape('table')} icon={<TableIcon className="w-5 h-5" />} label={t('tools.table')} />
         </div>
-        <div className="mt-auto flex flex-col gap-2">
+        <div className="mt-auto flex flex-col gap-2 pb-4 shrink-0">
           <ToolButton onClick={deleteSelected} disabled={state.selectedIds.length === 0} icon={<Trash2 className="w-5 h-5" />} label={t('tools.delete')} danger />
         </div>
       </div>
 
-      <div className="flex-1 relative bg-white flex flex-col">
-        {/* 合并后的顶部导航条 */}
-        <div className="h-14 w-full bg-white/80 backdrop-blur-md border-b border-zinc-200 px-4 flex items-center justify-between z-30 shrink-0">
-          {/* 左侧：应用信息与历史记录 */}
-          <div className="flex items-center gap-4">
-            <span className="text-xs font-black uppercase tracking-widest text-zinc-400 border-r border-zinc-200 pr-4 mr-2">{t('app.title')}</span>
-            <div className="flex items-center gap-1 bg-zinc-100/50 p-1 rounded-lg">
+      <div className="flex-1 relative bg-white flex flex-col min-w-0 overflow-hidden">
+        {/* 顶部导航条 */}
+        <div className="h-14 w-full bg-white border-b border-zinc-200 px-4 flex items-center z-30 shrink-0 overflow-hidden">
+          
+          {/* 左端 */}
+          <div className="flex-1 flex items-center gap-4 min-w-0">
+            <span className="text-xs font-black uppercase tracking-widest text-zinc-400 border-r border-zinc-200 pr-4 mr-2 whitespace-nowrap hidden lg:inline">{t('app.title')}</span>
+            <div className="flex items-center gap-1 bg-zinc-100/50 p-1 rounded-lg shrink-0">
                <button onClick={undo} disabled={!canUndo} className="p-1.5 hover:bg-white hover:shadow-sm text-zinc-600 rounded-md disabled:opacity-20 transition-all"><Undo2 className="w-3.5 h-3.5" /></button>
                <button onClick={redo} disabled={!canRedo} className="p-1.5 hover:bg-white hover:shadow-sm text-zinc-600 rounded-md disabled:opacity-20 transition-all"><Redo2 className="w-3.5 h-3.5" /></button>
             </div>
-            <div className="flex items-center gap-2 text-zinc-400">
-               <span className="text-[10px] font-mono font-bold">{Math.round(state.zoom * 100)}%</span>
+            <div className="flex items-center gap-2 text-zinc-400 shrink-0">
+               <span className="text-[10px] font-mono font-bold whitespace-nowrap">{Math.round(state.zoom * 100)}%</span>
             </div>
           </div>
 
-          {/* 中间：选中元素的属性面板 (动态显示) */}
-          <div className="flex-1 flex justify-center overflow-hidden">
+          {/* 中间 */}
+          <div className="flex-none flex justify-center items-center px-4 max-w-[50%] overflow-hidden min-w-0">
             {selectedShape ? (
               <Toolbar 
                 selectedShape={selectedShape}
                 onUpdate={(u) => updateShape(selectedShape.id, u)}
               />
             ) : (
-              <div className="text-[10px] font-medium text-zinc-300 uppercase tracking-widest animate-in fade-in duration-500">
+              <div className="text-[10px] font-medium text-zinc-300 uppercase tracking-widest animate-in fade-in duration-500 whitespace-nowrap">
                 {state.interactionState === 'IDLE' ? t('app.welcome') : t('app.processing')}
               </div>
             )}
           </div>
 
-          {/* 右侧：全局操作与语言 */}
-          <div className="flex items-center gap-3">
+          {/* 右端 */}
+          <div className="flex-1 flex items-center justify-end gap-3 min-w-0">
             <button 
               onClick={() => setLanguage(language === 'en' ? 'zh' : 'en')} 
-              className="flex items-center gap-1.5 px-3 py-1.5 hover:bg-zinc-100 rounded-lg text-[10px] font-bold text-zinc-500 hover:text-indigo-600 uppercase transition-all"
+              className="flex items-center gap-1.5 px-3 py-1.5 hover:bg-zinc-100 rounded-lg text-[10px] font-bold text-zinc-500 hover:text-indigo-600 uppercase transition-all whitespace-nowrap"
             >
               <Languages className="w-3.5 h-3.5" /> {language === 'en' ? 'EN' : '中文'}
             </button>
             <button 
               onClick={handleExport}
-              className="flex items-center gap-2 px-4 py-1.5 bg-zinc-900 text-white hover:bg-zinc-800 rounded-lg text-xs font-bold transition-all shadow-sm active:scale-95"
+              className="flex items-center gap-2 px-4 py-1.5 bg-zinc-900 text-white hover:bg-zinc-800 rounded-lg text-xs font-bold transition-all shadow-sm active:scale-95 whitespace-nowrap"
             >
-              <Download className="w-3.5 h-3.5" /> {t('app.export')}
+              <Download className="w-3.5 h-3.5 shrink-0" /> <span className="hidden sm:inline">{t('app.export')}</span>
             </button>
           </div>
         </div>
 
         {/* 画布区域 */}
-        <div className="flex-1 relative overflow-hidden">
+        <div className="flex-1 relative overflow-hidden bg-zinc-50/50 min-h-0">
           <CanvasEditor 
             state={state} setState={setState} 
             updateShape={updateShape} plugins={plugins}
@@ -269,7 +270,7 @@ const MainApp: React.FC = () => {
 const App: React.FC = () => (<I18nProvider><MainApp /></I18nProvider>);
 
 const ToolButton: React.FC<any> = ({ icon, label, active, onClick, disabled, danger }) => (
-  <button onClick={onClick} disabled={disabled} className={`p-2.5 rounded-xl transition-all group relative ${active ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200' : 'text-zinc-400 hover:bg-zinc-50 hover:text-zinc-900'} ${disabled ? 'opacity-20' : ''} ${danger && !disabled ? 'hover:bg-red-50 hover:text-red-500' : ''}`}>
+  <button onClick={onClick} disabled={disabled} className={`p-2.5 rounded-xl transition-all group relative shrink-0 ${active ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200' : 'text-zinc-400 hover:bg-zinc-50 hover:text-zinc-900'} ${disabled ? 'opacity-20' : ''} ${danger && !disabled ? 'hover:bg-red-50 hover:text-red-500' : ''}`}>
     {icon}
     <span className="absolute left-14 bg-zinc-900 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-all duration-200 border border-zinc-800 z-[100] whitespace-nowrap shadow-xl translate-x-1 group-hover:translate-x-0 font-bold uppercase tracking-tighter">{label}</span>
   </button>

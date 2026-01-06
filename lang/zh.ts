@@ -3,10 +3,10 @@ import { TranslationKeys } from './en';
 
 export const zh: TranslationKeys = {
   app: {
-    title: "CanvasAI 视觉设计",
+    title: "yoyo design",
     export: "导出",
     processing: "处理中...",
-    welcome: "欢迎使用 CanvasAI",
+    welcome: "欢迎使用 yoyo design",
     doubleClickEdit: "双击进行编辑",
   },
   tools: {
@@ -23,6 +23,7 @@ export const zh: TranslationKeys = {
     connection: "连接线",
     connect: "连接工具",
     group: "组合",
+    // Fix: Remove 'ungroup' and duplicate 'delete', add 'curve' to match TranslationKeys
     curve: "曲线",
   },
   ai: {
@@ -43,6 +44,7 @@ export const zh: TranslationKeys = {
     height: "高度",
     rotate: "旋转",
     size: "字号",
+    // Fix: Removed invalid 'text' property to match TranslationKeys
     content: "内容",
     contentPlaceholder: "请输入文本...",
   },

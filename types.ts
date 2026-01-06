@@ -57,6 +57,7 @@ export interface Shape {
   fill: string;
   stroke: string;
   strokeWidth: number;
+  cornerRadius?: number; // 新增：圆角大小
   text?: string;
   fontSize?: number;
   textColor?: string;
@@ -76,7 +77,7 @@ export interface Shape {
 }
 
 export type InteractionState = 'IDLE' | 'SELECTING' | 'TRANSFORMING' | 'EDITING' | 'DRAWING' | 'PANNING' | 'MARQUEE' | 'CONNECTING';
-export type TransformType = 'MOVE' | 'RESIZE' | 'ROTATE';
+export type TransformType = 'MOVE' | 'RESIZE' | 'ROTATE' | 'RADIUS'; // 新增：RADIUS 变换
 
 export interface BaseEvent {
   x: number;

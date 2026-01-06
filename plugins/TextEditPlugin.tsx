@@ -11,7 +11,7 @@ export const useTextEditPlugin = (): CanvasPlugin => {
     onEditModeEnter: (e, ctx) => {
       if (ctx.state.editingId) return;
       const shape = ctx.state.shapes.find(s => s.id === e.id);
-      const editableTypes = ['text', 'rect', 'diamond'];
+      const editableTypes = ['text', 'rect', 'diamond', 'circle'];
       
       if (shape && editableTypes.includes(shape.type)) {
         ctx.setState(prev => ({ 
@@ -35,13 +35,26 @@ export const useTextEditPlugin = (): CanvasPlugin => {
       if (shape.type === 'table') return null;
 
       const isPureText = shape.type === 'text';
+      const isRect = shape.type === 'rect';
+      const isDiamond = shape.type === 'diamond';
+      const isCircle = shape.type === 'circle';
       const { zoom, offset } = ctx.state;
       
       const dispWidth = shape.width * zoom;
       const dispHeight = shape.height * zoom;
       
-      const editorWidth = (isPureText ? shape.width : (shape.type === 'diamond' ? shape.width * 0.6 : shape.width - 10)) * zoom;
-      const editorHeight = (isPureText ? Math.max(shape.height * zoom, (shape.fontSize || 16) * 1.5 * zoom) : (shape.height * 0.8 * zoom));
+      // 计算编辑器尺寸
+      let editorWidth = dispWidth;
+      let editorHeight = dispHeight;
+
+      if (isPureText) {
+        editorWidth = shape.width * zoom;
+        editorHeight = Math.max(shape.height * zoom, (shape.fontSize || 16) * 1.5 * zoom);
+      } else if (isDiamond || isCircle) {
+        // 菱形和圆形文本区域较小，输入框也同步缩小以防溢出图形
+        editorWidth = shape.width * 0.7 * zoom;
+        editorHeight = shape.height * 0.7 * zoom;
+      }
 
       const style: React.CSSProperties = {
         position: 'absolute',
@@ -62,12 +75,13 @@ export const useTextEditPlugin = (): CanvasPlugin => {
         width: editorWidth,
         height: editorHeight,
         fontSize: (shape.fontSize || 16) * zoom,
-        color: (isPureText || shape.fill === '#18181b' || shape.fill === '#4f46e5') ? '#ffffff' : '#000000',
-        background: isPureText ? 'rgba(99, 102, 241, 0.1)' : 'transparent',
-        border: isPureText ? '2px solid #6366f1' : 'none',
-        borderRadius: '4px',
+        color: '#000000',
+        background: '#ffffff',
+        border: (isRect || isCircle) ? '2px solid #6366f1' : '1.5px solid #6366f1',
+        borderRadius: isRect ? '0px' : '4px',
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
         outline: 'none',
-        padding: '0',
+        padding: (isRect || isCircle) ? `${8 * zoom}px ${10 * zoom}px` : '4px',
         margin: '0',
         resize: 'none',
         overflow: 'hidden',
@@ -75,9 +89,12 @@ export const useTextEditPlugin = (): CanvasPlugin => {
         wordBreak: 'break-word',
         fontFamily: 'Inter, sans-serif',
         lineHeight: 1.2,
-        caretColor: isPureText ? '#6366f1' : '#ffffff',
-        textAlign: isPureText ? 'left' : 'center',
+        caretColor: '#6366f1',
+        textAlign: shape.textAlign || (isPureText ? 'left' : 'center'),
         pointerEvents: 'auto',
+        boxSizing: 'border-box',
+        display: 'flex',
+        alignItems: 'center',
       };
 
       const finishEditing = () => {

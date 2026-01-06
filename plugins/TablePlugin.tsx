@@ -1,12 +1,14 @@
 
 import React, { useState } from 'react';
-import { CanvasPlugin, PluginContext, TableData } from '../types';
+import { CanvasPlugin, PluginContext, TableData, InternalHit } from '../types';
 import { TableShape } from '../models/TableShape';
 
 export const useTablePlugin = (): CanvasPlugin => {
   const [selection, setSelection] = useState<{ r1: number, c1: number, r2: number, c2: number } | null>(null);
   const [isSelecting, setIsSelecting] = useState(false);
   const [activeCellEdit, setActiveCellEdit] = useState<{ r: number, c: number } | null>(null);
+  
+  const [resizing, setResizing] = useState<{ type: 'row' | 'col', index: number, startSize: number, startPos: number } | null>(null);
 
   const updateTableData = (ctx: PluginContext, id: string, updater: (data: TableData) => TableData, save: boolean = true) => {
     const shape = ctx.state.shapes.find(s => s.id === id);
@@ -26,59 +28,123 @@ export const useTablePlugin = (): CanvasPlugin => {
     priority: 110,
 
     onMouseDown: (e, hit, ctx) => {
-      if (ctx.state.editingId && ctx.state.editingId === hit?.id) {
-        if (e.internalHit?.type === 'cell') {
-          const { r, c } = e.internalHit.metadata;
-          if (activeCellEdit && (activeCellEdit.r !== r || activeCellEdit.c !== c)) {
-            setActiveCellEdit(null);
-            const table = ctx.scene.getShapes().find(s => s.id === ctx.state.editingId) as TableShape;
-            if (table) table.activeCell = null;
-          }
-          setSelection({ r1: r, c1: c, r2: r, c2: c });
-          setIsSelecting(true);
+      const hitData = e.internalHit;
+      if (!hitData) return false;
+
+      const isEditing = ctx.state.editingId === hitData.id;
+      
+      if (isEditing && (hitData.type === 'row-resize' || hitData.type === 'col-resize')) {
+        const shape = ctx.state.shapes.find(s => s.id === hitData.id);
+        if (shape && shape.tableData) {
+          const index = hitData.metadata.index;
+          const isCol = hitData.type === 'col-resize';
+          setResizing({
+            type: isCol ? 'col' : 'row',
+            index,
+            startSize: isCol ? shape.tableData.cols[index] : shape.tableData.rows[index],
+            startPos: isCol ? e.x : e.y
+          });
           e.consume();
           return true;
         }
       }
+
+      if (isEditing && hitData.type === 'cell') {
+        const { r, c } = hitData.metadata;
+        if (activeCellEdit && (activeCellEdit.r !== r || activeCellEdit.c !== c)) {
+          setActiveCellEdit(null);
+          const table = ctx.scene.getShapes().find(s => s.id === ctx.state.editingId) as TableShape;
+          if (table) table.activeCell = null;
+        }
+        setSelection({ r1: r, c1: c, r2: r, c2: c });
+        setIsSelecting(true);
+        e.consume();
+        return true;
+      }
+      
       return false;
     },
 
     onMouseMove: (e, ctx) => {
-      if (isSelecting && ctx.state.editingId && e.internalHit?.type === 'cell') {
-        const { r, c } = e.internalHit.metadata;
+      const hitData = e.internalHit;
+
+      if (resizing) {
+        const delta = resizing.type === 'col' ? (e.x - resizing.startPos) : (e.y - resizing.startPos);
+        const newSize = Math.max(20, resizing.startSize + delta);
+        
+        updateTableData(ctx, ctx.state.editingId || ctx.state.selectedIds[0], data => {
+          if (resizing.type === 'col') data.cols[resizing.index] = newSize;
+          else data.rows[resizing.index] = newSize;
+          return data;
+        }, false);
+        
+        ctx.setCursor(resizing.type === 'col' ? 'col-resize' : 'row-resize');
+        e.consume();
+        return;
+      }
+
+      if (hitData?.id === ctx.state.editingId) {
+        if (hitData.type === 'col-resize') {
+          ctx.setCursor('col-resize');
+          e.consume();
+        } else if (hitData.type === 'row-resize') {
+          ctx.setCursor('row-resize');
+          e.consume();
+        }
+      }
+
+      if (isSelecting && ctx.state.editingId && hitData?.type === 'cell' && hitData.id === ctx.state.editingId) {
+        const { r, c } = hitData.metadata;
         setSelection(prev => prev ? { ...prev, r2: r, c2: c } : { r1: r, c1: c, r2: r, c2: c });
         e.consume();
       }
     },
 
-    onMouseUp: () => {
+    onMouseUp: (e, ctx) => {
+      if (resizing) {
+        ctx.setState(prev => ({ ...prev }), true);
+        setResizing(null);
+      }
       setIsSelecting(false);
     },
 
     onDoubleClick: (e, hit, ctx) => {
       if (hit?.type === 'table') {
-        if (e.internalHit?.type === 'cell') {
-          const { r, c } = e.internalHit.metadata;
-          if (ctx.state.editingId === hit.id) {
+        const hitData = e.internalHit;
+        if (hitData?.type === 'cell') {
+          const { r, c } = hitData.metadata;
+          
+          const activateCell = () => {
+            setActiveCellEdit({ r, c });
+            setSelection({ r1: r, c1: c, r2: r, c2: c });
+            
             const table = ctx.scene.getShapes().find(s => s.id === hit.id) as TableShape;
             if (table) {
-              setActiveCellEdit({ r, c });
               table.activeCell = { r, c };
-              setSelection({ r1: r, c1: c, r2: r, c2: c });
-              e.consume();
             }
-          } else {
-            setSelection({ r1: r, c1: c, r2: r, c2: c });
+          };
+
+          if (ctx.state.editingId !== hit.id) {
+            ctx.setState(prev => ({ 
+              ...prev, 
+              editingId: hit.id, 
+              interactionState: 'EDITING',
+              selectedIds: [hit.id] 
+            }), true);
           }
+          
+          activateCell();
+          e.consume();
         }
       }
     },
 
     onRenderForeground: (ctx) => {
-      const { editingId, zoom, offset } = ctx.state;
-      if (!editingId || !selection) return;
+      const { editingId, selectedIds, zoom, offset } = ctx.state;
+      const targetId = editingId || (selectedIds.length === 1 ? selectedIds[0] : null);
+      if (!targetId) return;
 
-      const shape = ctx.state.shapes.find(s => s.id === editingId);
+      const shape = ctx.state.shapes.find(s => s.id === targetId);
       if (!shape || shape.type !== 'table' || !shape.tableData) return;
 
       const c = ctx.renderer?.ctx;
@@ -96,20 +162,38 @@ export const useTablePlugin = (): CanvasPlugin => {
       c.rotate(shape.rotation);
       c.translate(-tableCx, -tableCy);
 
-      const r1 = Math.min(selection.r1, selection.r2), r2 = Math.max(selection.r1, selection.r2);
-      const c1 = Math.min(selection.c1, selection.c2), c2 = Math.max(selection.c1, selection.c2);
+      if (editingId === targetId && selection) {
+        const r1 = Math.min(selection.r1, selection.r2), r2 = Math.max(selection.r1, selection.r2);
+        const c1 = Math.min(selection.c1, selection.c2), c2 = Math.max(selection.c1, selection.c2);
 
-      const selX = shape.x + shape.tableData.cols.slice(0, c1).reduce((a, b) => a + b, 0);
-      const selY = shape.y + shape.tableData.rows.slice(0, r1).reduce((a, b) => a + b, 0);
-      const selW = shape.tableData.cols.slice(c1, c2 + 1).reduce((a, b) => a + b, 0);
-      const selH = shape.tableData.rows.slice(r1, r2 + 1).reduce((a, b) => a + b, 0);
+        const selX = shape.x + shape.tableData.cols.slice(0, c1).reduce((a, b) => a + b, 0);
+        const selY = shape.y + shape.tableData.rows.slice(0, r1).reduce((a, b) => a + b, 0);
+        const selW = shape.tableData.cols.slice(c1, c2 + 1).reduce((a, b) => a + b, 0);
+        const selH = shape.tableData.rows.slice(r1, r2 + 1).reduce((a, b) => a + b, 0);
 
-      c.fillStyle = 'rgba(79, 70, 229, 0.1)';
-      c.strokeStyle = '#6366f1';
-      c.lineWidth = 2 / zoom;
-      c.fillRect(selX, selY, selW, selH);
-      c.strokeRect(selX, selY, selW, selH);
+        c.fillStyle = 'rgba(79, 70, 229, 0.1)';
+        c.strokeStyle = '#6366f1';
+        c.lineWidth = 1 / zoom;
+        c.fillRect(selX, selY, selW, selH);
+        c.strokeRect(selX, selY, selW, selH);
+      }
       
+      if (resizing) {
+        c.beginPath();
+        c.strokeStyle = '#6366f1';
+        c.lineWidth = 1 / zoom;
+        if (resizing.type === 'col') {
+          const x = shape.x + shape.tableData.cols.slice(0, resizing.index + 1).reduce((a, b) => a + b, 0);
+          c.moveTo(x, shape.y);
+          c.lineTo(x, shape.y + shape.height);
+        } else {
+          const y = shape.y + shape.tableData.rows.slice(0, resizing.index + 1).reduce((a, b) => a + b, 0);
+          c.moveTo(shape.x, y);
+          c.lineTo(shape.x + shape.width, y);
+        }
+        c.stroke();
+      }
+
       c.restore();
     },
 
@@ -121,75 +205,78 @@ export const useTablePlugin = (): CanvasPlugin => {
       if (!shape || shape.type !== 'table' || !shape.tableData) return null;
 
       const { r, c } = activeCellEdit;
-      const tableData = shape.tableData;
-      
-      // 单元格在表格内部的逻辑位移（未缩放）
-      const offX = tableData.cols.slice(0, c).reduce((a, b) => a + b, 0);
-      const offY = tableData.rows.slice(0, r).reduce((a, b) => a + b, 0);
-      const cellW = tableData.cols[c];
-      const cellH = tableData.rows[r];
-      const cellKey = `${r},${c}`;
-      const cellData = tableData.cells[cellKey];
+      const { rows, cols, cells } = shape.tableData;
+      const cellData = cells[`${r},${c}`];
 
-      // 父容器：定位在表格的世界坐标左上角，宽度高度同步
-      const containerStyle: React.CSSProperties = {
+      const cellX = shape.x + cols.slice(0, c).reduce((a, b) => a + b, 0);
+      const cellY = shape.y + rows.slice(0, r).reduce((a, b) => a + b, 0);
+      const cellW = cols[c];
+      const cellH = rows[r];
+
+      const finishEditing = () => {
+        setActiveCellEdit(null);
+        const table = ctx.scene.getShapes().find(s => s.id === editingId) as TableShape;
+        if (table) table.activeCell = null;
+      };
+
+      const style: React.CSSProperties = {
         position: 'absolute',
         left: shape.x * zoom + offset.x,
         top: shape.y * zoom + offset.y,
         width: shape.width * zoom,
         height: shape.height * zoom,
-        transform: `rotate(${shape.rotation}rad)`,
-        transformOrigin: 'center center',
         pointerEvents: 'none',
-        zIndex: 5000,
+        transformOrigin: 'center center',
+        transform: `rotate(${shape.rotation}rad)`,
+        zIndex: 10001
       };
 
-      // 内部输入框：绝对定位于父容器内部
-      const inputStyle: React.CSSProperties = {
+      const textareaStyle: React.CSSProperties = {
         position: 'absolute',
-        left: offX * zoom,
-        top: offY * zoom,
+        left: (cellX - shape.x) * zoom,
+        top: (cellY - shape.y) * zoom,
         width: cellW * zoom,
         height: cellH * zoom,
-        margin: 0,
-        padding: '0 8px', 
-        border: '2px solid #6366f1', 
-        backgroundColor: '#ffffff',
-        color: '#111827',
-        fontSize: `${(shape.fontSize || 14) * zoom}px`,
-        textAlign: cellData?.align || 'center',
-        lineHeight: `${cellH * zoom}px`,
+        fontSize: (cellData?.fontSize || shape.fontSize || 14) * zoom,
+        color: cellData?.textColor || shape.textColor || '#000000',
+        background: cellData?.fill || '#ffffff',
+        border: 'none',
+        outline: `2px solid #6366f1`,
+        margin: '0',
+        padding: '2px',
         resize: 'none',
-        outline: 'none',
         overflow: 'hidden',
-        whiteSpace: 'nowrap',
+        whiteSpace: 'pre-wrap',
         fontFamily: 'Inter, sans-serif',
-        boxSizing: 'border-box',
-        caretColor: '#6366f1', 
+        lineHeight: 1.2,
+        textAlign: cellData?.align || 'center',
         pointerEvents: 'auto',
-        display: 'flex',
-        alignItems: 'center',
-        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+        boxSizing: 'border-box'
       };
 
       return (
-        <div style={containerStyle}>
+        <div style={style}>
           <textarea
             autoFocus
-            style={inputStyle}
+            style={textareaStyle}
             value={cellData?.text || ''}
-            onBlur={() => {
-              const table = ctx.scene.getShapes().find(s => s.id === editingId) as TableShape;
-              if (table) table.activeCell = null;
-              setActiveCellEdit(null);
+            onBlur={finishEditing}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                finishEditing();
+              }
+              if (e.key === 'Escape') {
+                finishEditing();
+              }
             }}
-            onChange={e => updateTableData(ctx, editingId, data => {
-              data.cells[cellKey] = { ...(data.cells[cellKey] || { text: '' }), text: e.target.value };
-              return data;
-            }, false)}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.blur(); }
-              if (e.key === 'Escape') { e.currentTarget.blur(); }
+            onChange={(e) => {
+              const val = e.target.value;
+              updateTableData(ctx, editingId, data => {
+                const key = `${r},${c}`;
+                data.cells[key] = { ...data.cells[key], text: val };
+                return data;
+              }, false);
             }}
             onMouseDown={e => e.stopPropagation()}
           />

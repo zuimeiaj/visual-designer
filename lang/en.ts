@@ -1,10 +1,10 @@
 
 export const en = {
   app: {
-    title: "CanvasAI Designer",
+    title: "yoyo design",
     export: "Export",
     processing: "Processing...",
-    welcome: "Welcome to CanvasAI",
+    welcome: "Welcome to yoyo design",
     doubleClickEdit: "Double click to edit",
   },
   tools: {

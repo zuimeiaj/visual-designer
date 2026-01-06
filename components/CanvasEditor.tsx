@@ -43,7 +43,7 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
 
   useEffect(() => {
     if (canvasRef.current) {
-      const ctx = canvasRef.current.getContext('2d');
+      const ctx = canvasRef.current.getContext('2d', { alpha: false });
       if (ctx) rendererRef.current = new CanvasRenderer(ctx);
     }
   }, []);
@@ -186,6 +186,7 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
     } else {
       for (const p of sortedPlugins) {
         p.onMouseMove?.(base, pluginCtx);
+        if (base.consumed) break; 
       }
     }
     lastMousePos.current = { x: base.x, y: base.y };
@@ -248,7 +249,13 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
       if (canvas && canvas.parentElement) {
         const dpr = window.devicePixelRatio || 1;
         const rect = canvas.parentElement.getBoundingClientRect();
-        canvas.width = rect.width * dpr; canvas.height = rect.height * dpr;
+        
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+        
+        canvas.style.width = `${rect.width}px`;
+        canvas.style.height = `${rect.height}px`;
+        
         draw();
       }
     };
@@ -258,13 +265,26 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
   }, [draw]);
 
   useEffect(() => {
-    const request = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(request);
+    let rafId: number;
+    const loop = () => {
+      draw();
+      rafId = requestAnimationFrame(loop);
+    };
+    rafId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafId);
   }, [draw]);
 
   return (
     <div className="w-full h-full relative overflow-hidden bg-white flex items-start justify-start">
-      <canvas ref={canvasRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onDoubleClick={handleDoubleClick} onContextMenu={e => e.preventDefault()} className="block outline-none" />
+      <canvas 
+        ref={canvasRef} 
+        onMouseDown={handleMouseDown} 
+        onMouseMove={handleMouseMove} 
+        onMouseUp={handleMouseUp} 
+        onDoubleClick={handleDoubleClick} 
+        onContextMenu={e => e.preventDefault()} 
+        className="block outline-none" 
+      />
       {sortedPlugins.map((p, i) => <React.Fragment key={p.name + i}>{p.onRenderOverlay?.(pluginCtx)}</React.Fragment>)}
     </div>
   );
