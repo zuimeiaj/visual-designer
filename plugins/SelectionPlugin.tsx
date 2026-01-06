@@ -1,6 +1,7 @@
 
 import { CanvasPlugin, Shape, PluginContext } from '../types';
 import { useState, useRef, useEffect } from 'react';
+import { UIShape } from '../models/UIShape';
 
 export const useSelectionPlugin = (): CanvasPlugin => {
   const [marquee, setMarquee] = useState<{ start: { x: number, y: number }, end: { x: number, y: number } } | null>(null);
@@ -11,34 +12,13 @@ export const useSelectionPlugin = (): CanvasPlugin => {
   const EDGE_THRESHOLD = 50; 
   const MAX_SCROLL_SPEED = 12;
 
-  const getAABB = (s: Shape): { x: number, y: number, w: number, h: number } => {
-    if (s.type === 'group' && s.children && s.children.length > 0) {
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      s.children.forEach(c => {
-        const b = getAABB(c);
-        minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
-        maxX = Math.max(maxX, b.x + b.w); maxY = Math.max(maxY, b.y + b.h);
-      });
-      return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
-    }
-    const cx = s.x + s.width / 2, cy = s.y + s.height / 2;
-    const cos = Math.cos(s.rotation), sin = Math.sin(s.rotation);
-    const hw = s.width / 2, hh = s.height / 2;
-    const corners = [{x:-hw,y:-hh},{x:hw,y:-hh},{x:hw,y:hh},{x:-hw,y:hh}].map(p => ({
-      x: cx + p.x * cos - p.y * sin, y: cy + p.x * sin + p.y * cos
-    }));
-    const xs = corners.map(p => p.x), ys = corners.map(p => p.y);
-    const x = Math.min(...xs), y = Math.min(...ys);
-    return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
-  };
-
   useEffect(() => {
     const autoScroll = () => {
       const ctx = ctxRef.current;
       const screenPos = lastScreenPos.current;
       const canvas = ctx?.canvas;
 
-      if (!ctx || !screenPos || !canvas || ctx.state.interactionState !== 'MARQUEE') {
+      if (!ctx || !screenPos || !canvas || !marquee) {
         rafRef.current = requestAnimationFrame(autoScroll);
         return;
       }
@@ -47,8 +27,7 @@ export const useSelectionPlugin = (): CanvasPlugin => {
       const mouseX = screenPos.x - rect.left;
       const mouseY = screenPos.y - rect.top;
 
-      let dx = 0;
-      let dy = 0;
+      let dx = 0, dy = 0;
 
       if (mouseX < EDGE_THRESHOLD) {
         dx = Math.max(-MAX_SCROLL_SPEED, -((EDGE_THRESHOLD - mouseX) / EDGE_THRESHOLD) * MAX_SCROLL_SPEED);
@@ -78,33 +57,41 @@ export const useSelectionPlugin = (): CanvasPlugin => {
 
     rafRef.current = requestAnimationFrame(autoScroll);
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
-  }, []);
+  }, [marquee]);
 
   return {
     name: 'selection',
     priority: 10,
+
+    onMouseDown: (e, hit, ctx) => {
+      ctxRef.current = ctx;
+      const isSelectTool = ctx.state.activeTool === 'select';
+      const isLeftClick = (e.nativeEvent as MouseEvent).button === 0;
+
+      if (!hit && isSelectTool && isLeftClick) {
+        setMarquee({ start: { x: e.x, y: e.y }, end: { x: e.x, y: e.y } });
+        ctx.setState(prev => ({ 
+          ...prev, 
+          interactionState: 'MARQUEE',
+          selectedIds: (e.nativeEvent as MouseEvent).shiftKey ? prev.selectedIds : [] 
+        }), false);
+        e.consume();
+        return true;
+      }
+      return false;
+    },
     
     onInteraction: (type, e, ctx) => {
       ctxRef.current = ctx;
       if (type === 'mousemove') {
         const me = e.nativeEvent as MouseEvent;
         lastScreenPos.current = { x: me.clientX, y: me.clientY };
-        if (ctx.state.interactionState === 'MARQUEE') {
-          setMarquee(prev => {
-            if (!prev) return { start: { x: e.x, y: e.y }, end: { x: e.x, y: e.y } };
-            return { ...prev, end: { x: e.x, y: e.y } };
-          });
+        
+        if (marquee) {
+          setMarquee(prev => prev ? { ...prev, end: { x: e.x, y: e.y } } : null);
           ctx.setCursor('crosshair');
           e.consume();
         }
-      }
-    },
-
-    onDeselectAfter: (e, ctx) => {
-      if (ctx.state.activeTool === 'select') {
-        const me = e.nativeEvent as MouseEvent;
-        lastScreenPos.current = { x: me.clientX, y: me.clientY };
-        setMarquee({ start: { x: e.x, y: e.y }, end: { x: e.x, y: e.y } });
       }
     },
 
@@ -115,20 +102,29 @@ export const useSelectionPlugin = (): CanvasPlugin => {
         const y1 = Math.min(marquee.start.y, marquee.end.y);
         const x2 = Math.max(marquee.start.x, marquee.end.x);
         const y2 = Math.max(marquee.start.y, marquee.end.y);
+        
         const isClick = Math.abs(x1 - x2) < 2 && Math.abs(y1 - y2) < 2;
+        
         if (!isClick) {
           const inRect = ctx.state.shapes.filter(s => {
-            if (s.locked) return false;
-            const b = getAABB(s);
-            return b.x + b.w >= x1 && b.x <= x2 && b.y + b.h >= y1 && b.y <= y2;
+            if (s.locked || s.type === 'connection') return false;
+            // 统一使用 UIShape 获取 AABB 保证精准
+            const b = UIShape.create(s).getAABB();
+            return b.x < x2 && b.x + b.w > x1 && b.y < y2 && b.y + b.h > y1;
           }).map(s => s.id);
+
           const isMulti = (e.nativeEvent as MouseEvent).shiftKey;
           ctx.setState(prev => ({ 
             ...prev, 
-            selectedIds: isMulti ? [...new Set([...prev.selectedIds, ...inRect])] : inRect 
+            selectedIds: isMulti ? [...new Set([...prev.selectedIds, ...inRect])] : inRect,
+            interactionState: 'IDLE'
           }), true);
+        } else {
+          ctx.setState(prev => ({ ...prev, interactionState: 'IDLE' }), false);
         }
+        
         setMarquee(null);
+        e.consume();
       }
     },
 
@@ -137,20 +133,21 @@ export const useSelectionPlugin = (): CanvasPlugin => {
       const dpr = window.devicePixelRatio || 1;
       const { ctx: c } = ctx.renderer;
       const { zoom, offset } = ctx.state;
+      
       c.save();
-      c.setTransform(dpr, 0, 0, dpr, 0, 0); // 关键：适配高 DPI 屏幕
+      c.setTransform(dpr, 0, 0, dpr, 0, 0); 
       c.translate(offset.x, offset.y);
       c.scale(zoom, zoom);
       
-      c.strokeStyle = '#818cf8';
-      c.fillStyle = 'rgba(129, 140, 248, 0.15)';
-      c.lineWidth = 1.5 / zoom;
+      const x = Math.min(marquee.start.x, marquee.end.x);
+      const y = Math.min(marquee.start.y, marquee.end.y);
+      const w = Math.abs(marquee.end.x - marquee.start.x);
+      const h = Math.abs(marquee.end.y - marquee.start.y);
+
+      c.strokeStyle = '#6366f1';
+      c.fillStyle = 'rgba(99, 102, 241, 0.08)';
+      c.lineWidth = 1 / zoom;
       c.setLineDash([4 / zoom, 2 / zoom]);
-      
-      const x = marquee.start.x;
-      const y = marquee.start.y;
-      const w = marquee.end.x - x;
-      const h = marquee.end.y - y;
       
       c.fillRect(x, y, w, h);
       c.strokeRect(x, y, w, h);

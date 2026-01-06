@@ -59,7 +59,7 @@ export class TextShape extends UIShape {
 
     const paragraphs = this.text.split('\n');
     const lh = this.fontSize * 1.2;
-    let currY = this.y;
+    let currY = 0;
 
     paragraphs.forEach(p => {
       const words = p.split('');
@@ -77,9 +77,9 @@ export class TextShape extends UIShape {
   }
 
   private drawAlignedLine(ctx: CanvasRenderingContext2D, line: string, y: number) {
-    let x = this.x;
-    if (this.textAlign === 'center') x = this.x + this.width / 2;
-    if (this.textAlign === 'right') x = this.x + this.width;
+    let x = 0;
+    if (this.textAlign === 'center') x = this.width / 2;
+    if (this.textAlign === 'right') x = this.width;
     ctx.fillText(line, x, y);
   }
 }

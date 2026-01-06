@@ -35,20 +35,20 @@ export class CurveShape extends UIShape {
     if (!this.curvePoints || this.curvePoints.length < 2) return;
     ctx.beginPath();
     const start = this.curvePoints[0];
-    ctx.moveTo(this.x + start.x, this.y + start.y);
+    ctx.moveTo(start.x, start.y);
     for (let i = 1; i < this.curvePoints.length; i++) {
       const p = this.curvePoints[i];
       const prev = this.curvePoints[i-1];
       const cp1 = prev.handleOut ? { x: prev.x + prev.handleOut.x, y: prev.y + prev.handleOut.y } : { x: prev.x, y: prev.y };
       const cp2 = p.handleIn ? { x: p.x + p.handleIn.x, y: p.y + p.handleIn.y } : { x: p.x, y: p.y };
-      ctx.bezierCurveTo(this.x + cp1.x, this.y + cp1.y, this.x + cp2.x, this.y + cp2.y, this.x + p.x, this.y + p.y);
+      ctx.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, p.x, p.y);
     }
     if (this.closed) {
       const last = this.curvePoints[this.curvePoints.length - 1];
       const first = this.curvePoints[0];
       const cp1 = last.handleOut ? { x: last.x + last.handleOut.x, y: last.y + last.handleOut.y } : { x: last.x, y: last.y };
       const cp2 = first.handleIn ? { x: first.x + first.handleIn.x, y: first.y + first.handleIn.y } : { x: first.x, y: first.y };
-      ctx.bezierCurveTo(this.x + cp1.x, this.y + cp1.y, this.x + cp2.x, this.y + cp2.y, this.x + first.x, this.y + first.y);
+      ctx.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, first.x, first.y);
       ctx.closePath();
       if (this.fill !== 'transparent') {
         ctx.fillStyle = this.fill;

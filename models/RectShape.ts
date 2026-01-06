@@ -8,7 +8,7 @@ export class RectShape extends UIShape {
   public textColor?: string;
   public textAlign: TextAlign = 'center';
   public cornerRadius: number = 0;
-  public hideControls: boolean = false; // 用于表格内部单元格
+  public hideControls: boolean = false; 
 
   constructor(data: Shape) {
     super(data);
@@ -35,18 +35,17 @@ export class RectShape extends UIShape {
       // @ts-ignore
       if (ctx.roundRect) {
         // @ts-ignore
-        ctx.roundRect(this.x, this.y, this.width, this.height, r);
+        ctx.roundRect(0, 0, this.width, this.height, r);
       } else {
-        // Fallback for older browsers
-        ctx.moveTo(this.x + r, this.y);
-        ctx.arcTo(this.x + this.width, this.y, this.x + this.width, this.y + this.height, r);
-        ctx.arcTo(this.x + this.width, this.y + this.height, this.x, this.y + this.height, r);
-        ctx.arcTo(this.x, this.y + this.height, this.x, this.y, r);
-        ctx.arcTo(this.x, this.y, this.x + this.width, this.y, r);
+        ctx.moveTo(r, 0);
+        ctx.arcTo(this.width, 0, this.width, this.height, r);
+        ctx.arcTo(this.width, this.height, 0, this.height, r);
+        ctx.arcTo(0, this.height, 0, 0, r);
+        ctx.arcTo(0, 0, this.width, 0, r);
         ctx.closePath();
       }
     } else {
-      ctx.rect(this.x, this.y, this.width, this.height);
+      ctx.rect(0, 0, this.width, this.height);
     }
     
     ctx.fillStyle = this.fill;
@@ -65,16 +64,16 @@ export class RectShape extends UIShape {
       ctx.textAlign = this.textAlign;
       ctx.textBaseline = 'middle';
       
-      const padding = 10 + r; // 考虑圆角增加内边距
+      const padding = 10 + r;
       const lines = this.wrapText(ctx, this.text, this.width - padding * 2);
       const lineHeight = (this.fontSize || 14) * 1.2;
       const totalHeight = lines.length * lineHeight;
-      let startY = this.y + this.height / 2 - (totalHeight / 2) + (lineHeight / 2);
+      let startY = this.height / 2 - (totalHeight / 2) + (lineHeight / 2);
 
       lines.forEach(line => {
-        let drawX = this.x + this.width / 2;
-        if (this.textAlign === 'left') drawX = this.x + padding;
-        if (this.textAlign === 'right') drawX = this.x + this.width - padding;
+        let drawX = this.width / 2;
+        if (this.textAlign === 'left') drawX = padding;
+        if (this.textAlign === 'right') drawX = this.width - padding;
         
         ctx.fillText(line, drawX, startY);
         startY += lineHeight;

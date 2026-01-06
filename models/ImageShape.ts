@@ -23,20 +23,20 @@ export class ImageShape extends UIShape {
 
   public onDraw(ctx: CanvasRenderingContext2D, zoom: number, isEditing: boolean): void {
     if (this.img && this.img.src && this.img.complete && this.img.naturalWidth > 0) {
-      ctx.drawImage(this.img, this.x, this.y, this.width, this.height);
+      ctx.drawImage(this.img, 0, 0, this.width, this.height);
     } else {
       ctx.fillStyle = '#18181b';
-      ctx.fillRect(this.x, this.y, this.width, this.height);
+      ctx.fillRect(0, 0, this.width, this.height);
       
       ctx.strokeStyle = '#3f3f46';
       ctx.lineWidth = 1;
-      ctx.strokeRect(this.x, this.y, this.width, this.height);
+      ctx.strokeRect(0, 0, this.width, this.height);
       
       ctx.fillStyle = '#71717a';
       ctx.font = '10px Inter';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('Double-click to upload', this.x + this.width / 2, this.y + this.height / 2);
+      ctx.fillText('Double-click to upload', this.width / 2, this.height / 2);
     }
   }
 }

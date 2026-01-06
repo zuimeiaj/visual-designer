@@ -25,26 +25,36 @@ export const useRulerPlugin = (): CanvasPlugin => {
 
     onViewChange: (e, ctx) => {
       const native = e.nativeEvent as WheelEvent;
+      const canvas = ctx.canvas;
+      if (!canvas) return;
+
       if (native.ctrlKey || native.metaKey) {
-        const canvas = ctx.canvas;
-        if (!canvas) return;
+        // 缩放逻辑
         const rect = canvas.getBoundingClientRect();
         const mouseX = native.clientX - rect.left;
         const mouseY = native.clientY - rect.top;
+
         ctx.setState((prev) => {
           const worldX = (mouseX - prev.offset.x) / prev.zoom;
           const worldY = (mouseY - prev.offset.y) / prev.zoom;
-          const delta = -native.deltaY * 0.005;
+          
+          const delta = -native.deltaY * 0.002;
           const newZoom = Math.min(20, Math.max(0.05, prev.zoom * (1 + delta)));
+          
           const newOffsetX = mouseX - worldX * newZoom;
           const newOffsetY = mouseY - worldY * newZoom;
+          
           return { ...prev, zoom: newZoom, offset: { x: newOffsetX, y: newOffsetY } };
         }, false);
         e.consume();
       } else {
+        // 平移逻辑
         ctx.setState((prev) => ({
           ...prev,
-          offset: { x: prev.offset.x - native.deltaX, y: prev.offset.y - native.deltaY }
+          offset: { 
+            x: prev.offset.x - native.deltaX, 
+            y: prev.offset.y - native.deltaY 
+          }
         }), false);
         e.consume();
       }
@@ -58,7 +68,7 @@ export const useRulerPlugin = (): CanvasPlugin => {
       const { zoom, offset } = ctx.state;
 
       c.save();
-      c.setTransform(dpr, 0, 0, dpr, 0, 0); // 关键：适配高 DPI 屏幕
+      c.setTransform(dpr, 0, 0, dpr, 0, 0); 
       c.fillStyle = '#ffffff';
       c.fillRect(0, 0, width / dpr, height / dpr);
       
@@ -101,7 +111,7 @@ export const useRulerPlugin = (): CanvasPlugin => {
       const { zoom, offset } = ctx.state;
 
       c.save();
-      c.setTransform(dpr, 0, 0, dpr, 0, 0); // 关键：适配高 DPI 屏幕
+      c.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       c.fillStyle = 'rgba(255, 255, 255, 0.9)';
       c.fillRect(0, 0, canvasWidth, RULER_SIZE); 

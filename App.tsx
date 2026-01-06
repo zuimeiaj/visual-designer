@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { 
   Square, Circle as CircleIcon, Type as TypeIcon, Image as ImageIcon, Minus,
@@ -105,7 +104,7 @@ const MainApp: React.FC = () => {
       height: type === 'table' ? 150 : (type === 'text' ? 40 : (type === 'line' ? 2 : 100)),
       rotation: 0,
       fill: type === 'text' ? '#18181b' : (type === 'line' ? '#818cf8' : (type === 'circle' ? '#22c55e' : (type === 'diamond' ? '#f59e0b' : (type === 'table' ? '#ffffff' : '#4f46e5')))),
-      stroke: type === 'text' ? 'none' : (type === 'line' ? 'none' : (type === 'circle' ? '#16a34a' : (type === 'diamond' ? '#d97706' : '#3f3f46'))),
+      stroke: type === 'text' ? 'none' : (type === 'line' ? 'none' : (type === 'circle' ? '#16a34a' : (type === 'diamond' ? '#d97706' : (type === 'table' ? '#000000' : '#3f3f46')))),
       strokeWidth: type === 'table' ? 1 : 2,
       text: type === 'text' ? t('app.doubleClickEdit') : undefined,
       fontSize: type === 'text' ? 16 : undefined,

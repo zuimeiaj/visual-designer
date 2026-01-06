@@ -76,11 +76,19 @@ export abstract class UIShape {
 
   public draw(ctx: CanvasRenderingContext2D, zoom: number, isEditing: boolean = false): void {
     ctx.save();
-    const cx = this.x + this.width / 2;
-    const cy = this.y + this.height / 2;
-    ctx.translate(cx, cy);
-    ctx.rotate(this.rotation);
-    ctx.translate(-cx, -cy);
+    // 1. Move to the shape's position
+    ctx.translate(this.x, this.y);
+    
+    // 2. Handle rotation around the center of the shape
+    if (this.rotation !== 0) {
+      const cx = this.width / 2;
+      const cy = this.height / 2;
+      ctx.translate(cx, cy);
+      ctx.rotate(this.rotation);
+      ctx.translate(-cx, -cy);
+    }
+
+    // 3. Subclasses now draw relative to (0, 0)
     this.onDraw(ctx, zoom, isEditing);
     ctx.restore();
   }
@@ -116,18 +124,14 @@ export abstract class UIShape {
     const cy = this.y + this.height / 2;
     const dx = px - cx, dy = py - cy;
     const cos = Math.cos(-this.rotation), sin = Math.sin(-this.rotation);
-    const lx = dx * cos - dy * sin + cx;
-    const ly = dx * sin + dy * cos + cy;
+    const lx = dx * cos - dy * sin + this.width / 2;
+    const ly = dx * sin + dy * cos + this.height / 2;
     
     const padding = (this.type === 'line' || this.type === 'path' || this.type === 'curve') ? 10 : 0;
-    return lx >= this.x - padding && lx <= this.x + this.width + padding && 
-           ly >= this.y - padding && ly <= this.y + this.height + padding;
+    return lx >= 0 - padding && lx <= this.width + padding && 
+           ly >= 0 - padding && ly <= this.height + padding;
   }
 
-  /**
-   * 框架层获取内部命中目标的通用方法。
-   * 子类（如 TableShape）应重写此方法。
-   */
   public getInternalHit(px: number, py: number): InternalHit | null {
     if (!this.hitTest(px, py)) return null;
     return { type: 'shape', id: this.id };

@@ -1,6 +1,6 @@
 
 import { UIShape, TransformParams } from "./UIShape";
-import { Shape, TableData, TableMerge, InternalHit } from "../types";
+import { Shape, TableData, InternalHit } from "../types";
 import { RectShape } from "./RectShape";
 
 export class TableShape extends UIShape {
@@ -39,7 +39,7 @@ export class TableShape extends UIShape {
             stroke: 'none',
             strokeWidth: 0
           });
-          renderer.hideControls = true; // 关键：隐藏内部单元格的控制点
+          renderer.hideControls = true;
           this.cellRenderers.set(key, renderer);
         }
       }
@@ -82,17 +82,15 @@ export class TableShape extends UIShape {
 
   public onDraw(ctx: CanvasRenderingContext2D, zoom: number, isEditing: boolean): void {
     const { rows, cols, cells } = this.tableData;
-    const startX = this.x;
-    const startY = this.y;
 
     if (this.fill && this.fill !== 'transparent') {
       ctx.fillStyle = this.fill;
-      ctx.fillRect(startX, startY, this.width, this.height);
+      ctx.fillRect(0, 0, this.width, this.height);
     }
 
-    let currentY = startY;
+    let currentY = 0;
     for (let r = 0; r < rows.length; r++) {
-      let currentX = startX;
+      let currentX = 0;
       for (let c = 0; c < cols.length; c++) {
         const cellKey = `${r},${c}`;
         const cellData = cells[cellKey];
@@ -100,6 +98,7 @@ export class TableShape extends UIShape {
 
         if (renderer) {
           const isCellBeingEdited = this.activeCell && this.activeCell.r === r && this.activeCell.c === c;
+          // Note: renderer.x/y are relative to parent (TableShape origin)
           renderer.update({
             x: currentX, y: currentY, width: cols[c], height: rows[r],
             fill: cellData?.fill || 'transparent',
@@ -108,7 +107,7 @@ export class TableShape extends UIShape {
             textColor: cellData?.textColor || this.textColor || '#1f2937',
             textAlign: cellData?.align || 'center'
           });
-          renderer.onDraw(ctx, zoom, !!isCellBeingEdited);
+          renderer.draw(ctx, zoom, !!isCellBeingEdited);
         }
         currentX += cols[c];
       }
@@ -116,27 +115,27 @@ export class TableShape extends UIShape {
     }
 
     ctx.beginPath();
-    ctx.strokeStyle = '#e5e7eb';
+    ctx.strokeStyle = (this.stroke && this.stroke !== 'none') ? this.stroke : '#000000';
     ctx.lineWidth = 1 / zoom;
 
-    let ty = startY;
+    let ty = 0;
     for (let i = 0; i <= rows.length; i++) {
-      ctx.moveTo(startX, ty);
-      ctx.lineTo(startX + this.width, ty);
+      ctx.moveTo(0, ty);
+      ctx.lineTo(this.width, ty);
       if (i < rows.length) ty += rows[i];
     }
-    let tx = startX;
+    let tx = 0;
     for (let j = 0; j <= cols.length; j++) {
-      ctx.moveTo(tx, startY);
-      ctx.lineTo(tx, startY + this.height);
-      if (j < cols.length) tx += j < cols.length ? cols[j] : 0;
+      ctx.moveTo(tx, 0);
+      ctx.lineTo(tx, this.height);
+      if (j < cols.length) tx += cols[j];
     }
     ctx.stroke();
 
     if (this.stroke !== 'none' && this.stroke !== 'transparent') {
-      ctx.strokeStyle = this.stroke || '#d1d5db';
+      ctx.strokeStyle = this.stroke || '#000000';
       ctx.lineWidth = this.strokeWidth || 1;
-      ctx.strokeRect(startX, startY, this.width, this.height);
+      ctx.strokeRect(0, 0, this.width, this.height);
     }
   }
 
@@ -147,13 +146,8 @@ export class TableShape extends UIShape {
     const cos = Math.cos(-this.rotation), sin = Math.sin(-this.rotation);
     const lx = dx * cos - dy * sin + this.width / 2;
     const ly = dx * sin + dy * cos + this.height / 2;
-    
-    // 允许 6 像素的误差来触发缩放
     const hitTolerance = 6;
-
     if (lx < -hitTolerance || lx > this.width + hitTolerance || ly < -hitTolerance || ly > this.height + hitTolerance) return null;
-    
-    // 1. 检查列线 (Vertical lines)
     let currentX = 0;
     for (let c = 0; c < this.tableData.cols.length; c++) {
       currentX += this.tableData.cols[c];
@@ -161,8 +155,6 @@ export class TableShape extends UIShape {
         return { type: 'col-resize', id: this.id, metadata: { index: c } };
       }
     }
-
-    // 2. 检查行线 (Horizontal lines)
     let currentY = 0;
     for (let r = 0; r < this.tableData.rows.length; r++) {
       currentY += this.tableData.rows[r];
@@ -170,8 +162,6 @@ export class TableShape extends UIShape {
         return { type: 'row-resize', id: this.id, metadata: { index: r } };
       }
     }
-
-    // 3. 检查单元格
     let cellY = 0;
     for (let r = 0; r < this.tableData.rows.length; r++) {
       let cellX = 0;
@@ -190,5 +180,4 @@ export class TableShape extends UIShape {
     return { type: 'shape', id: this.id };
   }
 }
-
 UIShape.register('table', TableShape);

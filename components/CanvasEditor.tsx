@@ -86,8 +86,17 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
       nativeEvent: e,
       internalHit,
       get consumed() { return consumed; },
-      consume: () => { consumed = true; }
+      consume: () => { 
+        consumed = true;
+        if (e.cancelable) e.preventDefault();
+      }
     };
+  };
+
+  const dispatchInteraction = (type: string, e: BaseEvent) => {
+    for (const p of sortedPlugins) {
+      p.onInteraction?.(type, e, pluginCtx);
+    }
   };
 
   const dispatchTransform = (type: 'onTransformStart' | 'onTransformUpdate' | 'onTransformEnd', base: BaseEvent, transformType: TransformType, forcedTargetIds?: string[]) => {
@@ -106,9 +115,14 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 2) return; // 右键由 onContextMenu 处理
+
     const base = createBaseEvent(e);
     lastMousePos.current = { x: base.x, y: base.y };
     startMousePos.current = { x: base.x, y: base.y };
+
+    dispatchInteraction('mousedown', base);
+    if (base.consumed) return;
 
     const hit = scene.hitTest(base.x, base.y);
 
@@ -136,13 +150,6 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
       if (base.consumed) return;
     }
 
-    if (e.button === 2) {
-      for (const p of sortedPlugins) {
-        if (p.onContextMenu?.(base, hit, pluginCtx)) break;
-      }
-      return;
-    }
-
     if (state.activeTool !== 'select' && state.activeTool !== 'connect') {
       setState(prev => ({ ...prev, interactionState: 'DRAWING' }), false);
       return;
@@ -166,13 +173,16 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
       dispatchTransform('onTransformStart', base, 'MOVE', nextIds);
     } else {
       if (!e.shiftKey) {
-        setState(prev => ({ ...prev, selectedIds: [], editingId: null, interactionState: 'MARQUEE' }), true);
+        setState(prev => ({ ...prev, selectedIds: [], editingId: null, interactionState: 'MARQUEE' }), false);
       }
     }
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
     const base = createBaseEvent(e);
+    dispatchInteraction('mousemove', base);
+    if (base.consumed) return;
+
     if (state.interactionState === 'IDLE' || state.interactionState === 'EDITING') {
       if (state.activeTool === 'select' || state.activeTool === 'connect') {
         setCursor('default');
@@ -194,12 +204,40 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
 
   const handleMouseUp = (e: React.MouseEvent) => {
     const base = createBaseEvent(e);
+    dispatchInteraction('mouseup', base);
+    if (base.consumed) return;
+
     if (state.interactionState === 'TRANSFORMING') {
       dispatchTransform('onTransformEnd', base, state.activeTransformType || 'MOVE');
     }
     for (const p of sortedPlugins) p.onMouseUp?.(base, pluginCtx);
+    
     if (state.interactionState !== 'EDITING') {
       setState(prev => ({ ...prev, interactionState: 'IDLE', activeTransformType: null }), true);
+    }
+  };
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const base = createBaseEvent(e);
+    const hit = scene.hitTest(base.x, base.y);
+    for (const p of sortedPlugins) {
+      if (p.onContextMenu?.(base, hit, pluginCtx)) {
+        break;
+      }
+    }
+  };
+
+  const handleWheel = (e: React.WheelEvent) => {
+    const base = createBaseEvent(e);
+    const viewEvent: ViewEvent = {
+      ...base,
+      zoom: state.zoom,
+      offset: state.offset
+    };
+    for (const p of sortedPlugins) {
+      p.onViewChange?.(viewEvent, pluginCtx);
+      if (viewEvent.consumed) break;
     }
   };
 
@@ -281,8 +319,9 @@ const CanvasEditor: React.FC<Props> = ({ state, setState, updateShape, plugins =
         onMouseDown={handleMouseDown} 
         onMouseMove={handleMouseMove} 
         onMouseUp={handleMouseUp} 
+        onWheel={handleWheel}
         onDoubleClick={handleDoubleClick} 
-        onContextMenu={e => e.preventDefault()} 
+        onContextMenu={handleContextMenu} 
         className="block outline-none" 
       />
       {sortedPlugins.map((p, i) => <React.Fragment key={p.name + i}>{p.onRenderOverlay?.(pluginCtx)}</React.Fragment>)}

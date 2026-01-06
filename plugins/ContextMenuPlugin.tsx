@@ -16,6 +16,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { useTranslation } from '../lang/i18n';
+import { UIShape } from '../models/UIShape';
 
 interface MenuState {
   x: number;
@@ -36,7 +37,7 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
         window.addEventListener('mousedown', handleGlobalClick);
         window.addEventListener('wheel', handleGlobalClick);
         window.addEventListener('contextmenu', handleGlobalClick);
-      }, 0);
+      }, 10);
       return () => {
         clearTimeout(timer);
         window.removeEventListener('mousedown', handleGlobalClick);
@@ -51,82 +52,6 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
     return parent ? getTopmostParentId(shapes, parent.id) : targetId;
   };
 
-  const getAABB = (s: Shape): { x: number, y: number, w: number, h: number } => {
-    if (s.type === 'group' && s.children && s.children.length > 0) {
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      s.children.forEach(c => {
-        const b = getAABB(c);
-        minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
-        maxX = Math.max(maxX, b.x + b.w); maxY = Math.max(maxY, b.y + b.h);
-      });
-      return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
-    }
-    const cx = s.x + s.width / 2, cy = s.y + s.height / 2;
-    const cos = Math.cos(s.rotation), sin = Math.sin(s.rotation);
-    const hw = s.width / 2, hh = s.height / 2;
-    const corners = [
-      { x: -hw, y: -hh }, { x: hw, y: -hh },
-      { x: hw, y: hh }, { x: -hw, y: hh }
-    ].map(p => ({
-      x: cx + p.x * cos - p.y * sin,
-      y: cy + p.x * sin + p.y * cos
-    }));
-    const xs = corners.map(p => p.x), ys = corners.map(p => p.y);
-    const minX = Math.min(...xs), minY = Math.min(...ys);
-    return { x: minX, y: minY, w: Math.max(...xs) - minX, h: Math.max(...ys) - minY };
-  };
-
-  const reorder = (ctx: PluginContext, type: 'front' | 'back' | 'forward' | 'backward') => {
-    const { selectedIds, shapes } = ctx.state;
-    if (selectedIds.length === 0) return;
-    const topSelectedIds = Array.from(new Set(selectedIds.map(id => getTopmostParentId(shapes, id))));
-    const sortedSelectedTopIds = [...topSelectedIds].sort((a, b) => {
-      return shapes.findIndex(s => s.id === a) - shapes.findIndex(s => s.id === b);
-    });
-
-    let newShapes = [...shapes];
-    if (type === 'front') {
-      const selected = newShapes.filter(s => sortedSelectedTopIds.includes(s.id));
-      const rest = newShapes.filter(s => !sortedSelectedTopIds.includes(s.id));
-      newShapes = [...rest, ...selected];
-    } 
-    else if (type === 'back') {
-      const selected = newShapes.filter(s => sortedSelectedTopIds.includes(s.id));
-      const rest = newShapes.filter(s => !sortedSelectedTopIds.includes(s.id));
-      newShapes = [...selected, ...rest];
-    } 
-    else if (type === 'forward') {
-      for (let i = sortedSelectedTopIds.length - 1; i >= 0; i--) {
-        const id = sortedSelectedTopIds[i];
-        const idx = newShapes.findIndex(s => s.id === id);
-        if (idx < newShapes.length - 1) {
-          const targetIdx = idx + 1;
-          const nextShape = newShapes[targetIdx];
-          if (!sortedSelectedTopIds.includes(nextShape.id)) {
-            const item = newShapes.splice(idx, 1)[0];
-            newShapes.splice(targetIdx, 0, item);
-          }
-        }
-      }
-    } 
-    else if (type === 'backward') {
-      for (let i = 0; i < sortedSelectedTopIds.length; i++) {
-        const id = sortedSelectedTopIds[i];
-        const idx = newShapes.findIndex(s => s.id === id);
-        if (idx > 0) {
-          const targetIdx = idx - 1;
-          const prevShape = newShapes[targetIdx];
-          if (!sortedSelectedTopIds.includes(prevShape.id)) {
-            const item = newShapes.splice(idx, 1)[0];
-            newShapes.splice(targetIdx, 0, item);
-          }
-        }
-      }
-    }
-    ctx.setState(prev => ({ ...prev, shapes: newShapes }), true);
-    closeMenu();
-  };
-
   const groupSelected = (ctx: PluginContext) => {
     const { selectedIds, shapes } = ctx.state;
     const topSelectedIds = Array.from(new Set(selectedIds.map(id => getTopmostParentId(shapes, id))));
@@ -137,9 +62,23 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
 
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     groupMembers.forEach(s => {
-      const b = getAABB(s);
+      const b = UIShape.create(s).getAABB();
       minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
       maxX = Math.max(maxX, b.x + b.w); maxY = Math.max(maxY, b.y + b.h);
+    });
+
+    const groupW = maxX - minX;
+    const groupH = maxY - minY;
+
+    // Convert child coordinates to be relative to the group's top-left
+    const relativeChildren = groupMembers.map(s => {
+      // Calculate world pos if it was previously relative (nested groups)
+      // For top-level grouping, it's just s.x - minX
+      return {
+        ...s,
+        x: s.x - minX,
+        y: s.y - minY
+      };
     });
 
     const newGroup: Shape = {
@@ -147,14 +86,13 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
       type: 'group',
       x: minX,
       y: minY,
-      width: maxX - minX,
-      height: maxY - minY,
+      width: groupW,
+      height: groupH,
       rotation: 0,
       fill: 'transparent',
       stroke: 'none',
       strokeWidth: 0,
-      children: groupMembers,
-      isTemporary: false 
+      children: relativeChildren
     };
 
     ctx.setState(prev => ({
@@ -172,38 +110,57 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
     const group = shapes.find(s => s.id === id);
     if (!group || group.type !== 'group' || !group.children) return;
 
+    // Convert relative coordinates back to world coordinates
+    const absoluteChildren = group.children.map(c => ({
+      ...c,
+      x: c.x + group.x,
+      y: c.y + group.y
+    }));
+
     const remainingShapes = shapes.filter(s => s.id !== id);
     ctx.setState(prev => ({
       ...prev,
-      shapes: [...remainingShapes, ...group.children!],
-      selectedIds: group.children!.map(s => s.id)
+      shapes: [...remainingShapes, ...absoluteChildren],
+      selectedIds: absoluteChildren.map(s => s.id)
     }), true);
+    closeMenu();
+  };
+
+  const reorder = (ctx: PluginContext, type: 'front' | 'back' | 'forward' | 'backward') => {
+    const { selectedIds, shapes } = ctx.state;
+    const topIds = Array.from(new Set(selectedIds.map(id => getTopmostParentId(shapes, id))));
+    let newShapes = [...shapes];
+    
+    if (type === 'front') {
+      const selected = newShapes.filter(s => topIds.includes(s.id));
+      const rest = newShapes.filter(s => !topIds.includes(s.id));
+      newShapes = [...rest, ...selected];
+    } else if (type === 'back') {
+      const selected = newShapes.filter(s => topIds.includes(s.id));
+      const rest = newShapes.filter(s => !topIds.includes(s.id));
+      newShapes = [...selected, ...rest];
+    }
+    ctx.setState(prev => ({ ...prev, shapes: newShapes }), true);
     closeMenu();
   };
 
   return {
     name: 'context-menu',
+    priority: 1000, 
+
     onContextMenu: (e, hit, ctx) => {
-      if (e.nativeEvent.preventDefault) e.nativeEvent.preventDefault();
       e.consume();
-      if (hit && !ctx.state.selectedIds.includes(hit.id)) {
-        const tid = getTopmostParentId(ctx.state.shapes, hit.id);
+      const { selectedIds, shapes } = ctx.state;
+      if (hit && !selectedIds.includes(hit.id)) {
+        const tid = getTopmostParentId(shapes, hit.id);
         ctx.setState(prev => ({ ...prev, selectedIds: [tid] }), false);
       }
       const mouseEvent = e.nativeEvent as MouseEvent;
       setMenu({ x: mouseEvent.clientX, y: mouseEvent.clientY, visible: true });
       return true;
     },
-    onRenderOverlay: (ctx) => {
-      useEffect(() => {
-        const handler = (e: any) => {
-          if (e.detail === 'group') groupSelected(ctx);
-          if (e.detail === 'ungroup') ungroupSelected(ctx);
-        };
-        window.addEventListener('canvas-command', handler);
-        return () => window.removeEventListener('canvas-command', handler);
-      }, [ctx]);
 
+    onRenderOverlay: (ctx) => {
       if (!menu.visible) return null;
       const { selectedIds, shapes } = ctx.state;
       const hasSelection = selectedIds.length > 0;
@@ -212,27 +169,31 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
 
       return (
         <div 
-          className="fixed bg-white border border-zinc-200 rounded-xl shadow-2xl p-1 w-52 z-[9999] overflow-hidden animate-in fade-in zoom-in duration-100"
+          className="fixed bg-white/95 backdrop-blur-md border border-zinc-200 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.15)] p-1.5 w-56 z-[999999] overflow-hidden animate-in fade-in zoom-in duration-150"
           style={{ left: menu.x, top: menu.y }}
           onMouseDown={e => e.stopPropagation()}
         >
-          <div className="text-[10px] font-bold text-zinc-400 px-3 py-2 uppercase tracking-widest flex items-center gap-2">
+          <div className="text-[10px] font-bold text-zinc-400 px-3 py-2 uppercase tracking-widest flex items-center gap-2 mb-1">
             <Layers className="w-3 h-3" /> {t('menu.layer')}
           </div>
           <MenuItem icon={<ChevronUp className="w-4 h-4" />} label={t('menu.bringForward')} disabled={!hasSelection} onClick={() => reorder(ctx, 'forward')} />
           <MenuItem icon={<ArrowUp className="w-4 h-4" />} label={t('menu.bringToFront')} disabled={!hasSelection} onClick={() => reorder(ctx, 'front')} />
           <MenuItem icon={<ChevronDown className="w-4 h-4" />} label={t('menu.sendBackward')} disabled={!hasSelection} onClick={() => reorder(ctx, 'backward')} />
           <MenuItem icon={<ArrowDown className="w-4 h-4" />} label={t('menu.sendToBack')} disabled={!hasSelection} onClick={() => reorder(ctx, 'back')} />
-          <div className="h-[1px] bg-zinc-100 my-1 mx-2" />
+          <div className="h-[1px] bg-zinc-100 my-1.5 mx-2" />
           {canUngroup ? (
             <MenuItem icon={<Ungroup className="w-4 h-4" />} label={t('menu.ungroup')} onClick={() => ungroupSelected(ctx)} />
           ) : (
             <MenuItem icon={<Group className="w-4 h-4" />} label={t('menu.group')} disabled={!canGroup} onClick={() => groupSelected(ctx)} />
           )}
-          <div className="h-[1px] bg-zinc-100 my-1 mx-2" />
+          <div className="h-[1px] bg-zinc-100 my-1.5 mx-2" />
           <MenuItem icon={<Trash2 className="w-4 h-4" />} label={t('menu.delete')} danger disabled={!hasSelection} onClick={() => {
             const topSelectedIds = Array.from(new Set(selectedIds.map(id => getTopmostParentId(shapes, id))));
-            ctx.setState(prev => ({ ...prev, shapes: prev.shapes.filter(s => !topSelectedIds.includes(s.id)), selectedIds: [] }), true);
+            ctx.setState(prev => ({ 
+              ...prev, 
+              shapes: prev.shapes.filter(s => !topSelectedIds.includes(s.id)), 
+              selectedIds: [] 
+            }), true);
             closeMenu();
           }} />
         </div>
@@ -249,9 +210,9 @@ const MenuItem: React.FC<{ icon: React.ReactNode, label: string, onClick?: () =>
       e.stopPropagation();
       if (!disabled && onClick) onClick();
     }} 
-    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${disabled ? 'opacity-30 cursor-not-allowed' : 'hover:bg-zinc-50 active:scale-95'} ${danger ? 'text-red-500 hover:bg-red-50' : 'text-zinc-700'}`}
+    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all ${disabled ? 'opacity-25 cursor-not-allowed' : 'hover:bg-zinc-100/80 active:scale-[0.97]'} ${danger ? 'text-red-500 hover:bg-red-50' : 'text-zinc-700 font-medium'}`}
   >
-    <div className="opacity-70 text-zinc-500">{icon}</div>
-    <span className="flex-1 text-left font-medium">{label}</span>
+    <div className={`${danger ? 'text-red-500' : 'text-zinc-400'}`}>{icon}</div>
+    <span className="flex-1 text-left">{label}</span>
   </button>
 );

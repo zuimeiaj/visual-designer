@@ -34,33 +34,28 @@ export class CircleShape extends UIShape {
   }
 
   public onDraw(ctx: CanvasRenderingContext2D, zoom: number, isEditing: boolean): void {
-    const cx = this.x + this.width / 2;
-    const cy = this.y + this.height / 2;
+    const cx = this.width / 2;
+    const cy = this.height / 2;
     const radius = Math.min(this.width, this.height) / 2;
 
-    // 绘制圆形背景
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
     ctx.fillStyle = this.fill;
     ctx.fill();
 
-    // 绘制描边
     if (this.stroke !== 'none') {
       ctx.strokeStyle = this.stroke;
       ctx.lineWidth = this.strokeWidth;
       ctx.stroke();
     }
 
-    // 绘制文本（非编辑状态）
     if (this.text && !isEditing) {
       ctx.save();
-      // 如果没有指定颜色，则根据背景色自动选择黑或白
       ctx.fillStyle = this.textColor || (this.fill === '#18181b' || this.fill === '#4f46e5' ? '#ffffff' : '#000000');
       ctx.font = `${this.fontSize}px Inter`;
       ctx.textAlign = this.textAlign;
       ctx.textBaseline = 'middle';
       
-      // 圆内文本区域限制（取正方形区域的 70%）
       const maxWidth = this.width * 0.7;
       const lines = this.wrapText(ctx, this.text, maxWidth);
       const lineHeight = (this.fontSize || 14) * 1.2;

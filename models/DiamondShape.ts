@@ -25,14 +25,14 @@ export class DiamondShape extends UIShape {
   }
 
   public onDraw(ctx: CanvasRenderingContext2D, zoom: number, isEditing: boolean): void {
-    const cx = this.x + this.width / 2;
-    const cy = this.y + this.height / 2;
+    const cx = this.width / 2;
+    const cy = this.height / 2;
 
     ctx.beginPath();
-    ctx.moveTo(cx, this.y);
-    ctx.lineTo(this.x + this.width, cy);
-    ctx.lineTo(cx, this.y + this.height);
-    ctx.lineTo(this.x, cy);
+    ctx.moveTo(cx, 0);
+    ctx.lineTo(this.width, cy);
+    ctx.lineTo(cx, this.height);
+    ctx.lineTo(0, cy);
     ctx.closePath();
 
     ctx.fillStyle = this.fill;
