@@ -49,7 +49,7 @@ export interface Shape {
   fill: string;
   stroke: string;
   strokeWidth: number;
-  cornerRadius?: number;
+  cornerRadius?: number | number[]; // Support single value or [tl, tr, br, bl]
   text?: string;
   fontSize?: number;
   textColor?: string;

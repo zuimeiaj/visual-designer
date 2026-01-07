@@ -45,6 +45,13 @@ export const zh: TranslationKeys = {
     size: "字号",
     content: "内容",
     contentPlaceholder: "请输入文本...",
+    cornerRadius: "圆角",
+    radiusTL: "左上",
+    radiusTR: "右上",
+    radiusBR: "右下",
+    radiusBL: "左下",
+    linkCorners: "链接圆角",
+    unlinkCorners: "独立圆角"
   },
   menu: {
     layer: "层级",

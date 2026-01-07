@@ -7,7 +7,7 @@ export class RectShape extends UIShape {
   public fontSize?: number;
   public textColor?: string;
   public textAlign: TextAlign = 'center';
-  public cornerRadius: number = 0;
+  public cornerRadius: number | number[] = 0;
   public hideControls: boolean = false; 
 
   constructor(data: Shape) {
@@ -30,21 +30,31 @@ export class RectShape extends UIShape {
 
   public onDraw(ctx: CanvasRenderingContext2D, zoom: number, isEditing: boolean): void {
     ctx.beginPath();
-    const r = Math.min(this.cornerRadius, this.width / 2, this.height / 2);
-    if (r > 0) {
-      if (ctx.roundRect) {
-        // @ts-ignore
-        ctx.roundRect(0, 0, this.width, this.height, r);
-      } else {
+    
+    // Normalize cornerRadius to handle both single number and array
+    let radii: number | number[] = 0;
+    if (Array.isArray(this.cornerRadius)) {
+      radii = this.cornerRadius.map(r => Math.min(r, this.width / 2, this.height / 2));
+    } else {
+      radii = Math.min(this.cornerRadius, this.width / 2, this.height / 2);
+    }
+
+    if (ctx.roundRect) {
+      // @ts-ignore
+      ctx.roundRect(0, 0, this.width, this.height, radii);
+    } else {
+      // Fallback for older environments if radii is a number
+      const r = Array.isArray(radii) ? radii[0] : radii; 
+      if (r > 0) {
         ctx.moveTo(r, 0);
         ctx.arcTo(this.width, 0, this.width, this.height, r);
         ctx.arcTo(this.width, this.height, 0, this.height, r);
         ctx.arcTo(0, this.height, 0, 0, r);
         ctx.arcTo(0, 0, this.width, 0, r);
         ctx.closePath();
+      } else {
+        ctx.rect(0, 0, this.width, this.height);
       }
-    } else {
-      ctx.rect(0, 0, this.width, this.height);
     }
     
     ctx.fillStyle = this.fill;
@@ -63,7 +73,8 @@ export class RectShape extends UIShape {
       ctx.textAlign = this.textAlign;
       ctx.textBaseline = 'middle';
       
-      const padding = 10 + r;
+      const r_val = Array.isArray(radii) ? Math.max(...radii) : radii;
+      const padding = 10 + r_val;
       const lines = this.wrapText(ctx, this.text, this.width - padding * 2);
       const lineHeight = (this.fontSize || 14) * 1.2;
       const totalHeight = lines.length * lineHeight;

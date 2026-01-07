@@ -43,6 +43,13 @@ export const en = {
     size: "Size",
     content: "Content",
     contentPlaceholder: "Text content...",
+    cornerRadius: "Corner Radius",
+    radiusTL: "TL",
+    radiusTR: "TR",
+    radiusBR: "BR",
+    radiusBL: "BL",
+    linkCorners: "Link corners",
+    unlinkCorners: "Unlink corners"
   },
   menu: {
     layer: "Layer",
