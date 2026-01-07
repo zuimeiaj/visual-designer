@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   Undo2, Redo2, Download, ChevronDown, ImageIcon, FileDown, 
@@ -8,6 +9,7 @@ import { useTranslation } from '../lang/i18n';
 import { useCanvas } from '../context/CanvasContext';
 import { useViewMode } from '../index';
 import Toolbar from './Toolbar';
+import ExportModal from './ExportModal';
 
 interface Props {
   canUndo: boolean;
@@ -21,6 +23,7 @@ const TopBar: React.FC<Props> = ({ canUndo, canRedo, onUndo, onRedo }) => {
   const { state, setState, actions } = useCanvas();
   const { setMode } = useViewMode();
   const [isExportOpen, setIsExportOpen] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   
   const dropdownRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -115,9 +118,9 @@ const TopBar: React.FC<Props> = ({ canUndo, canRedo, onUndo, onRedo }) => {
           {isExportOpen && (
             <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-2xl border border-zinc-100 py-1.5 z-[100] animate-in fade-in slide-in-from-top-2 duration-200">
               <div className="px-3 py-1.5 text-[9px] font-bold text-zinc-400 uppercase tracking-widest">导出</div>
-              <DropdownItem icon={<ImageIcon className="w-4 h-4" />} label={t('app.exportPNG')} onClick={() => actions.exportDesign('png')} />
+              <DropdownItem icon={<ImageIcon className="w-4 h-4" />} label="导出图片..." onClick={() => { setIsExportOpen(false); setIsExportModalOpen(true); }} />
               <DropdownItem icon={<Code className="w-4 h-4" />} label={t('app.exportHTML')} onClick={() => { setIsExportOpen(false); actions.exportDesign('html'); }} />
-              <DropdownItem icon={<FileDown className="w-4 h-4" />} label={t('app.exportXML')} onClick={() => actions.exportDesign('yoyo')} />
+              <DropdownItem icon={<FileDown className="w-4 h-4" />} label={t('app.exportXML')} onClick={() => { setIsExportOpen(false); actions.exportDesign('yoyo'); }} />
               <div className="h-[1px] bg-zinc-100 mx-2 my-1.5" />
               <div className="px-3 py-1.5 text-[9px] font-bold text-zinc-400 uppercase tracking-widest">导入</div>
               <DropdownItem icon={<FileUp className="w-4 h-4" />} label={t('app.importFile')} onClick={() => fileInputRef.current?.click()} />
@@ -126,6 +129,12 @@ const TopBar: React.FC<Props> = ({ canUndo, canRedo, onUndo, onRedo }) => {
           )}
         </div>
       </div>
+
+      <ExportModal 
+        isOpen={isExportModalOpen} 
+        onClose={() => setIsExportModalOpen(false)} 
+        onExport={actions.exportImage} 
+      />
     </div>
   );
 };

@@ -38,6 +38,13 @@ export interface TableData {
 export type AnchorPort = 'top' | 'right' | 'bottom' | 'left';
 export type TextAlign = 'left' | 'center' | 'right';
 
+export interface ExportSettings {
+  format: 'png' | 'jpeg';
+  quality: number;
+  padding: number;
+  scope: 'current' | 'all';
+}
+
 export interface Shape {
   id: string;
   type: ShapeType;
