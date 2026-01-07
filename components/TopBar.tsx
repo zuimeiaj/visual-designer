@@ -1,8 +1,13 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Undo2, Redo2, Download, ChevronDown, ImageIcon, FileDown, FileUp, Languages, Search, Package, Copy } from 'lucide-react';
+import { 
+  Undo2, Redo2, Download, ChevronDown, ImageIcon, FileDown, 
+  FileUp, Languages, Search, Package, Copy, 
+  MousePointer2, Share2, PenTool, Play
+} from 'lucide-react';
 import { useTranslation } from '../lang/i18n';
 import { useCanvas } from '../context/CanvasContext';
+import { useViewMode } from '../index';
 import Toolbar from './Toolbar';
 
 interface Props {
@@ -15,6 +20,7 @@ interface Props {
 const TopBar: React.FC<Props> = ({ canUndo, canRedo, onUndo, onRedo }) => {
   const { t, language, setLanguage } = useTranslation();
   const { state, setState, actions } = useCanvas();
+  const { setMode } = useViewMode();
   const [isExportOpen, setIsExportOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -24,6 +30,8 @@ const TopBar: React.FC<Props> = ({ canUndo, canRedo, onUndo, onRedo }) => {
     state.shapes.find(s => s.id === state.selectedIds[0]), 
     [state.shapes, state.selectedIds]
   );
+
+  const activeTool = state.activeTool;
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -74,6 +82,8 @@ const TopBar: React.FC<Props> = ({ canUndo, canRedo, onUndo, onRedo }) => {
         <span className="text-xs font-black uppercase tracking-widest text-zinc-400 border-r border-zinc-200 pr-4 hidden lg:inline">
           {t('app.title')}
         </span>
+        
+        {/* Undo/Redo Group */}
         <div className="flex items-center gap-1 bg-zinc-100/50 p-1 rounded-lg">
           <button onClick={onUndo} disabled={!canUndo} className="p-1.5 hover:bg-white hover:shadow-sm text-zinc-600 rounded-md disabled:opacity-20 transition-all" title="Undo (Ctrl+Z)">
             <Undo2 className="w-3.5 h-3.5" />
@@ -81,6 +91,28 @@ const TopBar: React.FC<Props> = ({ canUndo, canRedo, onUndo, onRedo }) => {
           <button onClick={onRedo} disabled={!canRedo} className="p-1.5 hover:bg-white hover:shadow-sm text-zinc-600 rounded-md disabled:opacity-20 transition-all" title="Redo (Ctrl+Shift+Z)">
             <Redo2 className="w-3.5 h-3.5" />
           </button>
+        </div>
+
+        {/* Global Tools Group */}
+        <div className="flex items-center gap-1 bg-zinc-100/50 p-1 rounded-lg">
+          <ToolActionBtn 
+            active={activeTool === 'select'} 
+            onClick={() => setState(p => ({ ...p, activeTool: 'select' }), false)} 
+            icon={<MousePointer2 className="w-3.5 h-3.5" />} 
+            title={t('tools.select')} 
+          />
+          <ToolActionBtn 
+            active={activeTool === 'connect'} 
+            onClick={() => setState(p => ({ ...p, activeTool: 'connect' }), false)} 
+            icon={<Share2 className="w-3.5 h-3.5" />} 
+            title={t('tools.connect')} 
+          />
+          <ToolActionBtn 
+            active={activeTool === 'curve'} 
+            onClick={() => setState(p => ({ ...p, activeTool: 'curve' }), false)} 
+            icon={<PenTool className="w-3.5 h-3.5" />} 
+            title={t('tools.pen')} 
+          />
         </div>
 
         {/* Zoom Indicator */}
@@ -94,6 +126,16 @@ const TopBar: React.FC<Props> = ({ canUndo, canRedo, onUndo, onRedo }) => {
             <span className="text-[10px] font-bold font-mono w-9 text-center">{zoomPercentage}%</span>
           </button>
         </div>
+
+        <div className="h-6 w-[1px] bg-zinc-200 mx-1" />
+
+        <button 
+          onClick={() => setMode('preview')}
+          className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg text-xs font-bold transition-all"
+        >
+          <Play className="w-3.5 h-3.5 fill-current" />
+          <span>预览模式</span>
+        </button>
       </div>
 
       <div className="flex-none px-4 flex justify-center">
@@ -148,6 +190,16 @@ const TopBar: React.FC<Props> = ({ canUndo, canRedo, onUndo, onRedo }) => {
     </div>
   );
 };
+
+const ToolActionBtn: React.FC<{ icon: React.ReactNode, active: boolean, onClick: () => void, title: string }> = ({ icon, active, onClick, title }) => (
+  <button 
+    onClick={onClick} 
+    className={`p-1.5 rounded-md transition-all ${active ? 'bg-white shadow-sm text-indigo-600' : 'hover:bg-white/50 text-zinc-600'}`} 
+    title={title}
+  >
+    {icon}
+  </button>
+);
 
 const DropdownItem: React.FC<{ icon: React.ReactNode, label: string, onClick: () => void, disabled?: boolean }> = ({ icon, label, onClick, disabled }) => (
   <button 

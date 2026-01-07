@@ -38,19 +38,6 @@ export const zh: TranslationKeys = {
     curve: "曲线",
     layers: "图层"
   },
-  ai: {
-    assistant: "AI 助手",
-    describeDesign: "描述你的设计",
-    placeholder: "例如：'添加一个简洁的侧边栏原型' 或 '将颜色更改为赛博朋克风格'",
-    suggestions: "快速建议",
-    enhanceLayout: "优化布局",
-    enhanceDesc: "自动调整间距与对齐",
-    modernPalette: "现代配色",
-    paletteDesc: "应用专业的高对比度色彩",
-    generateIcon: "生成图标",
-    iconDesc: "创建自定义资源",
-    canvasElements: "画布元素: {{count}}",
-  },
   properties: {
     width: "宽度",
     height: "高度",

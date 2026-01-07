@@ -2,11 +2,11 @@
 import { ShapeType, Shape, TableData } from '../types';
 
 export const COLORS = {
-  primary: '#18A0FB', // Figma Blue - Cleaner and more professional
-  secondary: '#27AE60', // Soft Green
-  accent: '#F2994A', // Soft Orange
-  text: '#333333', // Dark Gray for text
-  stroke: '#E0E0E0', // Light border
+  primary: '#18A0FB', // Figma Blue
+  secondary: '#27AE60', // Figma Green
+  accent: '#F2994A', // Figma Orange
+  text: '#333333', 
+  stroke: '#0D8DE1', // 略深于背景色的描边
   white: '#ffffff',
   transparent: 'transparent'
 };
@@ -38,14 +38,29 @@ export const createDefaultShape = (type: ShapeType, x: number, y: number): Parti
 
   switch (type) {
     case 'rect':
-      return { ...base, width: 140, height: 100, fill: COLORS.primary, cornerRadius: 4 };
+      return { 
+        ...base, 
+        width: 140, 
+        height: 100, 
+        fill: COLORS.primary, 
+        cornerRadius: 2, // Figma 风格的小圆角
+        stroke: COLORS.stroke,
+        strokeWidth: 1 
+      };
     case 'circle':
       return { ...base, width: 100, height: 100, fill: COLORS.secondary };
     case 'diamond':
       return { ...base, width: 120, height: 120, fill: COLORS.accent };
     case 'text':
-      // Text shapes use 'fill' as the text color in the current renderer implementation
-      return { ...base, width: 200, height: 40, fill: COLORS.text, fontSize: 16, textAlign: 'left', text: '' };
+      return { 
+        ...base, 
+        width: 200, 
+        height: 40, 
+        fill: COLORS.text, 
+        fontSize: 16, 
+        textAlign: 'left', 
+        text: '' 
+      };
     case 'table':
       return { 
         ...base, 

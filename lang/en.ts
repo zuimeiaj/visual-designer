@@ -36,19 +36,6 @@ export const en = {
     curve: "Curve",
     layers: "Layers"
   },
-  ai: {
-    assistant: "AI Assistant",
-    describeDesign: "Describe your design",
-    placeholder: "e.g., 'Add a sleek sidebar mockup' or 'Change colors to a cyberpunk theme'",
-    suggestions: "Quick Suggestions",
-    enhanceLayout: "Enhance Layout",
-    enhanceDesc: "Optimize spacing and alignment",
-    modernPalette: "Modern Palette",
-    paletteDesc: "Apply high-contrast pro colors",
-    generateIcon: "Generate Icon",
-    iconDesc: "Create a custom asset",
-    canvasElements: "Canvas elements: {{count}}",
-  },
   properties: {
     width: "Width",
     height: "Height",

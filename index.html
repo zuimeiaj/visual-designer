@@ -5,11 +5,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>yoyo design</title>
-  <!-- 恢复 CDN 引用以确保预览效果 -->
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <style>
-    /* 注入 Tailwind 配置以匹配本地开发环境 */
+  <script>
+    // 配置 Tailwind CDN 引擎，与本地 tailwind.config.js 保持一致
     tailwind.config = {
       theme: {
         extend: {
@@ -19,7 +18,7 @@
         },
       },
     }
-  </style>
+  </script>
   <style>
     :root {
       overscroll-behavior: none;

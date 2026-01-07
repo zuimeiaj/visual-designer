@@ -229,7 +229,9 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
 
           <div className="h-[1px] bg-zinc-100 my-1.5 mx-2" />
           <MenuItem icon={<Copy className="w-4 h-4" />} label={t('menu.exportSelected')} disabled={!hasSelection} onClick={() => {
-            ctx.actions.exportSelection();
+            if (ctx.actions?.exportSelection) {
+              ctx.actions.exportSelection();
+            }
             closeMenu();
           }} />
           <MenuItem icon={<Trash2 className="w-4 h-4" />} label={t('menu.delete')} danger disabled={!hasSelection} onClick={() => {
