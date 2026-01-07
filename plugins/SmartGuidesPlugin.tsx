@@ -41,6 +41,24 @@ export const useSmartGuidesPlugin = (): CanvasPlugin => {
     return ui.getAABB();
   };
 
+  const getSelectionAABB = (shapes: Shape[], ids: string[]): AABB | null => {
+    if (ids.length === 0) return null;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let found = false;
+    shapes.forEach(s => {
+      if (ids.includes(s.id)) {
+        const b = getAABB(s);
+        minX = Math.min(minX, b.x);
+        minY = Math.min(minY, b.y);
+        maxX = Math.max(maxX, b.x + b.w);
+        maxY = Math.max(maxY, b.y + b.h);
+        found = true;
+      }
+    });
+    if (!found) return null;
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  };
+
   const clearGuides = () => {
     setActiveLines([]);
     setSpacingGuides([]);
@@ -51,33 +69,35 @@ export const useSmartGuidesPlugin = (): CanvasPlugin => {
     priority: 40,
 
     onTransformUpdate: (e, ctx) => {
-      // 仅移动时计算，且不主动修改 ctx (吸附已在 TransformPlugin 完成)
-      if (e.type !== 'MOVE' || ctx.state.selectedIds.length !== 1) {
+      // 仅在移动操作（MOVE）时显示辅助线
+      if (e.type !== 'MOVE' || ctx.state.selectedIds.length === 0) {
         clearGuides();
         return;
       }
 
-      const activeId = ctx.state.selectedIds[0];
-      const shape = ctx.state.shapes.find(s => s.id === activeId);
-      if (!shape) {
+      const { selectedIds, shapes } = ctx.state;
+      // 获取当前选中的整体包围盒（支持单选或多选）
+      const a = getSelectionAABB(shapes, selectedIds);
+      if (!a) {
         clearGuides();
         return;
       }
 
-      const a = getAABB(shape);
       const aX = [a.x, a.x + a.w / 2, a.x + a.w];
       const aY = [a.y, a.y + a.h / 2, a.y + a.h];
       
       const newLines: GuideLine[] = [];
       const newSpacings: SpacingGuide[] = [];
 
-      ctx.state.shapes.forEach(s => {
-        if (s.id === activeId || s.type === 'connection') return;
+      shapes.forEach(s => {
+        // 排除掉当前选中的所有形状以及连接线
+        if (selectedIds.includes(s.id) || s.type === 'connection') return;
+        
         const b = getAABB(s);
         const bX = [b.x, b.x + b.w / 2, b.x + b.w];
         const bY = [b.y, b.y + b.h / 2, b.y + b.h];
         
-        // 检测是否已经对齐
+        // 检测横向或纵向边缘/中心是否对齐
         aX.forEach((av) => bX.forEach((bv) => {
           if (Math.abs(av - bv) < EPSILON) { 
             newLines.push({ type: 'X', val: bv, originId: s.id, targetAABB: b });
@@ -90,7 +110,7 @@ export const useSmartGuidesPlugin = (): CanvasPlugin => {
           }
         }));
 
-        // 间距计算
+        // 计算并添加间距指引
         if (a.x > b.x + b.w) {
           newSpacings.push({ x1: b.x + b.w, y1: a.y + a.h/2, x2: a.x, y2: a.y + a.h/2, dist: a.x - (b.x + b.w), type: 'H', aabb1: b, aabb2: a });
         } else if (b.x > a.x + a.w) {
@@ -105,7 +125,7 @@ export const useSmartGuidesPlugin = (): CanvasPlugin => {
       });
 
       setActiveLines(newLines);
-      setSpacingGuides(newSpacings.sort((a,b) => a.dist - b.dist).slice(0, 2));
+      setSpacingGuides(newSpacings.sort((a,b) => a.dist - b.dist).slice(0, 3));
     },
 
     onTransformEnd: () => clearGuides(),
@@ -113,10 +133,10 @@ export const useSmartGuidesPlugin = (): CanvasPlugin => {
 
     onRenderForeground: (ctx) => {
       if ((activeLines.length === 0 && spacingGuides.length === 0) || !ctx.renderer) return;
+      
       const { zoom, offset, selectedIds, shapes } = ctx.state;
-      const movingShape = shapes.find(s => s.id === selectedIds[0]);
-      if (!movingShape) return;
-      const movingAABB = getAABB(movingShape);
+      const movingAABB = getSelectionAABB(shapes, selectedIds);
+      if (!movingAABB) return;
 
       const c = ctx.renderer.ctx, dpr = window.devicePixelRatio || 1;
       
@@ -128,6 +148,7 @@ export const useSmartGuidesPlugin = (): CanvasPlugin => {
       c.strokeStyle = COLOR_GUIDE;
       c.lineWidth = 1 / zoom;
       
+      // 绘制对齐线
       activeLines.forEach(g => {
         c.beginPath();
         c.setLineDash([]);
@@ -145,6 +166,7 @@ export const useSmartGuidesPlugin = (): CanvasPlugin => {
         c.stroke();
       });
 
+      // 绘制间距标注
       spacingGuides.forEach(g => {
         c.beginPath();
         c.strokeStyle = COLOR_GUIDE;
@@ -189,13 +211,15 @@ export const useSmartGuidesPlugin = (): CanvasPlugin => {
         const padX = 3 / zoom; 
         const padY = 2 / zoom;
         const rx = tx - tw/2 - padX, ry = ty - th/2 - padY, rw = tw + padX*2, rh = th + padY*2;
+        
+        // 避让文字遮挡
         const offsetY = g.type === 'H' ? -10 / zoom : 0;
         const offsetX = g.type === 'V' ? 10 / zoom : 0;
+        
         c.fillStyle = COLOR_GUIDE;
         c.beginPath();
-        if (c.roundRect) {
-          // @ts-ignore
-          c.roundRect(rx + offsetX, ry + offsetY, rw, rh, 1.5/zoom);
+        if ((c as any).roundRect) {
+          (c as any).roundRect(rx + offsetX, ry + offsetY, rw, rh, 1.5/zoom);
         } else {
           c.rect(rx + offsetX, ry + offsetY, rw, rh);
         }

@@ -9,6 +9,7 @@ export const zh: TranslationKeys = {
     exportPNG: "导出 PNG 图片",
     exportJPG: "导出 JPG 图片",
     exportXML: "保存工程 (.yoyo)",
+    exportHTML: "导出离线预览 HTML",
     exportSelection: "导出选中图形 (.yshape)",
     importFile: "打开工程 (.yoyo)",
     importShapes: "导入图形片段 (.yshape)",

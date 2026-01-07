@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
 import { 
   CanvasPlugin, 
   PluginContext, 
@@ -21,9 +21,40 @@ interface MenuState {
 
 export const useContextMenuPlugin = (): CanvasPlugin => {
   const [menu, setMenu] = useState<MenuState>({ x: 0, y: 0, visible: false });
+  const [adjustedPos, setAdjustedPos] = useState({ x: 0, y: 0, origin: 'top left' });
+  const menuRef = useRef<HTMLDivElement>(null);
   const { t } = useTranslation();
 
   const closeMenu = useCallback(() => setMenu(prev => ({ ...prev, visible: false })), []);
+
+  // 动态计算菜单位置，防止超出屏幕
+  useLayoutEffect(() => {
+    if (menu.visible && menuRef.current) {
+      const rect = menuRef.current.getBoundingClientRect();
+      const viewportW = window.innerWidth;
+      const viewportH = window.innerHeight;
+
+      let x = menu.x;
+      let y = menu.y;
+      let originX = 'left';
+      let originY = 'top';
+
+      if (x + rect.width > viewportW) {
+        x = viewportW - rect.width - 10;
+        originX = 'right';
+      }
+      
+      if (y + rect.height > viewportH) {
+        y = viewportH - rect.height - 10;
+        originY = 'bottom';
+      }
+
+      x = Math.max(10, x);
+      y = Math.max(10, y);
+
+      setAdjustedPos({ x, y, origin: `${originY} ${originX}` });
+    }
+  }, [menu]);
 
   useEffect(() => {
     if (menu.visible) {
@@ -47,7 +78,6 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
     return parent ? getTopmostParentId(shapes, parent.id) : targetId;
   };
 
-  // --- 表格操作逻辑 ---
   const updateTableData = (ctx: PluginContext, id: string, updater: (data: TableData) => TableData) => {
     const shape = ctx.state.shapes.find(s => s.id === id);
     if (!shape || !shape.tableData) return;
@@ -63,7 +93,7 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
 
   const handleTableOp = (ctx: PluginContext, op: string) => {
     const hit = ctx.state.shapes.find(s => s.id === ctx.state.editingId);
-    const cell = (ctx.state as any)._contextMenuCell; // 通过临时状态传递选中的单元格信息
+    const cell = (ctx.state as any)._contextMenuCell; 
     if (!hit || !cell) return;
 
     const { r, c } = cell;
@@ -155,7 +185,6 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
       const { selectedIds, shapes, editingId } = ctx.state;
       const hitData = e.internalHit;
 
-      // 如果是在编辑表格单元格时右键
       if (editingId && hitData?.id === editingId && hitData.type === 'cell') {
         (ctx.state as any)._contextMenuCell = hitData.metadata;
       } else {
@@ -166,6 +195,7 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
       }
 
       const mouseEvent = e.nativeEvent as MouseEvent;
+      setAdjustedPos({ x: mouseEvent.clientX, y: mouseEvent.clientY, origin: 'top left' });
       setMenu({ x: mouseEvent.clientX, y: mouseEvent.clientY, visible: true });
       return true;
     },
@@ -180,24 +210,30 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
 
       return (
         <div 
-          className="fixed bg-white/95 backdrop-blur-md border border-zinc-200 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.15)] p-1.5 w-56 z-[999999] overflow-hidden animate-in fade-in zoom-in duration-150"
-          style={{ left: menu.x, top: menu.y }}
+          ref={menuRef}
+          className="fixed bg-white/95 backdrop-blur-xl border border-zinc-200/80 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.18)] p-1.5 w-56 z-[999999] overflow-y-auto max-h-[85vh] animate-in fade-in zoom-in duration-150 scrollbar-hide"
+          style={{ 
+            left: adjustedPos.x, 
+            top: adjustedPos.y, 
+            transformOrigin: adjustedPos.origin,
+            visibility: adjustedPos.x === 0 ? 'hidden' : 'visible'
+          }}
           onMouseDown={e => e.stopPropagation()}
         >
           {isTableEditing && (
             <>
-              <div className="text-[10px] font-bold text-zinc-400 px-3 py-2 uppercase tracking-widest flex items-center gap-2 mb-1">
-                <Rows className="w-3 h-3" /> 表格行列操作
+              <div className="text-[10px] font-black text-zinc-400 px-3 py-2 uppercase tracking-widest flex items-center gap-2 mb-1">
+                <Rows className="w-3 h-3" /> {t('tools.table')}
               </div>
               <MenuItem icon={<Plus className="w-4 h-4" />} label="在上方插入行" onClick={() => handleTableOp(ctx, 'ins-row-above')} />
               <MenuItem icon={<Minus className="w-4 h-4" />} label="删除当前行" danger onClick={() => handleTableOp(ctx, 'del-row')} />
               <MenuItem icon={<Plus className="w-4 h-4" />} label="在左侧插入列" onClick={() => handleTableOp(ctx, 'ins-col-left')} />
               <MenuItem icon={<Minus className="w-4 h-4" />} label="删除当前列" danger onClick={() => handleTableOp(ctx, 'del-col')} />
-              <div className="h-[1px] bg-zinc-100 my-1.5 mx-2" />
+              <div className="h-[1px] bg-zinc-100/80 my-1.5 mx-2" />
             </>
           )}
 
-          <div className="text-[10px] font-bold text-zinc-400 px-3 py-2 uppercase tracking-widest flex items-center gap-2 mb-1">
+          <div className="text-[10px] font-black text-zinc-400 px-3 py-2 uppercase tracking-widest flex items-center gap-2 mb-1">
             <Layers className="w-3 h-3" /> {t('menu.layer')}
           </div>
           <MenuItem icon={<ChevronUp className="w-4 h-4" />} label={t('menu.bringForward')} disabled={!hasSelection} onClick={() => {
@@ -210,6 +246,16 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
             }, true);
             closeMenu();
           }} />
+          <MenuItem icon={<ChevronDown className="w-4 h-4" />} label={t('menu.sendBackward')} disabled={!hasSelection} onClick={() => {
+            ctx.setState(prev => {
+              const idx = prev.shapes.findIndex(s => s.id === selectedIds[0]);
+              if (idx <= 0) return prev;
+              const next = [...prev.shapes];
+              [next[idx], next[idx-1]] = [next[idx-1], next[idx]];
+              return { ...prev, shapes: next };
+            }, true);
+            closeMenu();
+          }} />
           <MenuItem icon={<ArrowUp className="w-4 h-4" />} label={t('menu.bringToFront')} disabled={!hasSelection} onClick={() => {
             ctx.setState(prev => {
               const selected = prev.shapes.filter(s => selectedIds.includes(s.id));
@@ -218,8 +264,16 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
             }, true);
             closeMenu();
           }} />
+          <MenuItem icon={<ArrowDown className="w-4 h-4" />} label={t('menu.sendToBack')} disabled={!hasSelection} onClick={() => {
+            ctx.setState(prev => {
+              const selected = prev.shapes.filter(s => selectedIds.includes(s.id));
+              const rest = prev.shapes.filter(s => !selectedIds.includes(s.id));
+              return { ...prev, shapes: [...selected, ...rest] };
+            }, true);
+            closeMenu();
+          }} />
           
-          <div className="h-[1px] bg-zinc-100 my-1.5 mx-2" />
+          <div className="h-[1px] bg-zinc-100/80 my-1.5 mx-2" />
           
           {selectedIds.length === 1 && shapes.find(s => s.id === selectedIds[0])?.type === 'group' ? (
             <MenuItem icon={<Ungroup className="w-4 h-4" />} label={t('menu.ungroup')} onClick={() => ungroupSelected(ctx)} />
@@ -227,7 +281,7 @@ export const useContextMenuPlugin = (): CanvasPlugin => {
             <MenuItem icon={<Group className="w-4 h-4" />} label={t('menu.group')} disabled={selectedIds.length < 2} onClick={() => groupSelected(ctx)} />
           )}
 
-          <div className="h-[1px] bg-zinc-100 my-1.5 mx-2" />
+          <div className="h-[1px] bg-zinc-100/80 my-1.5 mx-2" />
           <MenuItem icon={<Copy className="w-4 h-4" />} label={t('menu.exportSelected')} disabled={!hasSelection} onClick={() => {
             if (ctx.actions?.exportSelection) {
               ctx.actions.exportSelection();
@@ -252,7 +306,7 @@ const MenuItem: React.FC<{ icon: React.ReactNode, label: string, onClick?: () =>
       e.stopPropagation();
       if (!disabled && onClick) onClick();
     }} 
-    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all ${disabled ? 'opacity-25 cursor-not-allowed' : 'hover:bg-zinc-100/80 active:scale-[0.97]'} ${danger ? 'text-red-500 hover:bg-red-50' : 'text-zinc-700 font-medium'}`}
+    className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-all ${disabled ? 'opacity-25 cursor-not-allowed' : 'hover:bg-zinc-100/80 active:scale-[0.96]'} ${danger ? 'text-red-500 hover:bg-red-50' : 'text-zinc-700 font-semibold'}`}
   >
     <div className={`${danger ? 'text-red-500' : 'text-zinc-400'}`}>{icon}</div>
     <span className="flex-1 text-left">{label}</span>

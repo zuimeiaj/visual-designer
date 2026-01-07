@@ -7,6 +7,7 @@ export const en = {
     exportPNG: "Export PNG",
     exportJPG: "Export JPG",
     exportXML: "Project (.yoyo)",
+    exportHTML: "Export Standalone HTML",
     exportSelection: "Export Selected (.yshape)",
     importFile: "Import Project (.yoyo)",
     importShapes: "Import Snippet (.yshape)",
